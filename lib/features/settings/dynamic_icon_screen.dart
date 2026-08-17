@@ -75,7 +75,7 @@ class DynamicIconScreen extends StatelessWidget {
             // Grid of Icons
             GridView.builder(
               shrinkWrap: true,
-              physics: const NeverScrollableScrollButtonPhysics(),
+              physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 14,

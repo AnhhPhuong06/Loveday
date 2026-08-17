@@ -30,9 +30,9 @@ class DynamicIconService extends ChangeNotifier {
   Future<bool> setAppIcon(AppIconModel icon) async {
     try {
       if (icon.id == 'default') {
-        await FlutterDynamicIconPlus.setAlternateIconName(null);
+        await FlutterDynamicIconPlus.setAlternateIconName(iconName: null);
       } else {
-        await FlutterDynamicIconPlus.setAlternateIconName(icon.iconKey);
+        await FlutterDynamicIconPlus.setAlternateIconName(iconName: icon.iconKey);
       }
       _currentIconId = icon.id;
       notifyListeners();

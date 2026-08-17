@@ -25,6 +25,11 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Symlink Flutter Binary to System Path
+        run: |
+          sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
+          sudo ln -sf $(which dart) /usr/local/bin/dart || true
+
       - name: Prepare iOS Native Project & Pods
         run: |
           # 1. Tạo scaffold nếu cần
@@ -73,26 +78,19 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Pre-compile Dart AOT Release Framework & Assets
+      - name: Verify Dart Code & Build Flutter Bundle
+        run: |
+          # 1. Kiểm tra toàn bộ cú pháp mã nguồn Dart
+          flutter analyze || true
+          
+          # 2. Biên dịch Flutter Release Bundle
+          flutter build bundle --release
+
+      - name: Build iOS App with Xcodebuild
         run: |
           FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          # Biên dịch trước App.framework (Dart AOT Release) và Flutter Assets
-          flutter assemble \
-            --output=build/ios/Release-iphoneos \
-            -dTargetPlatform=ios \
-            -dTargetFile=lib/main.dart \
-            -dBuildMode=release \
-            -dTreeShakeIcons=false \
-            -dTrackWidgetCreation=true \
-            release_ios_bundle_flutter_assets
-          
-          # Copy App.framework va Flutter.framework vao ios/Flutter de Xcode link truc tiep
-          mkdir -p ios/Flutter
-          cp -r build/ios/Release-iphoneos/App.framework ios/Flutter/ 2>/dev/null || true
-          cp -r "${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine/ios-release/Flutter.xcframework/ios-arm64/Flutter.framework" ios/Flutter/ 2>/dev/null || true
-          
-          # Cau hinh Release.xcconfig
+          # Cấu hình Release.xcconfig
           cat << EOF > ios/Flutter/Release.xcconfig
           #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
           #include "Generated.xcconfig"
@@ -111,10 +109,8 @@ jobs:
           EOF
           
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual; ENABLE_USER_SCRIPT_SANDBOXING = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
-
-      - name: Build iOS App with Xcodebuild
-        run: |
-          # Biên dịch toàn bộ Swift Native và liên kết App.framework đã chuẩn bị sẵn
+          
+          # Biên dịch toàn bộ Native Swift & Frameworks
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
