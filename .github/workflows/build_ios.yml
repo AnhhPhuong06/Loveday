@@ -42,68 +42,62 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Patch Xcode Configuration for Unsigned Build
+      - name: Build iOS Release App with Xcodebuild
         run: |
-          python3 -c "
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
-              content = f.read()
+          # 1. Export biến môi trường Flutter cần thiết cho xcode_backend.sh
+          export FLUTTER_ROOT="/Users/runner/hostedtoolcache/flutter/stable-3.24.0-arm64/flutter"
+          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          export DART_OBFUSCATION=false
+          export TRACK_WIDGET_CREATION=true
+          export TREE_SHAKE_ICONS=false
+          export PACKAGE_CONFIG=".dart_tool/package_config.json"
           
-          patch = '''CODE_SIGN_STYLE = Manual;
-          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
-          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
-          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
-          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
-          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
+          # 2. Biên dịch trước Flutter Release Bundle
+          flutter build bundle --release
           
-          content = content.replace('CODE_SIGN_STYLE = Automatic;', patch)
-          
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
-              f.write(content)
-          "
-          
-          mkdir -p ios/Flutter
-          cat << 'EOF' > ios/Flutter/Release.xcconfig
-          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
-          #include "Generated.xcconfig"
-          CODE_SIGN_STYLE = Manual
-          DEVELOPMENT_TEAM = ABCDE12345
-          CODE_SIGNING_ALLOWED = NO
-          CODE_SIGNING_REQUIRED = NO
-          CODE_SIGN_IDENTITY =
-          PROVISIONING_PROFILE_SPECIFIER =
-          EOF
-
-      - name: Compile iOS Release App
-        run: |
-          # Biên dịch toàn bộ Dart AOT + Native Swift
-          flutter build ipa --no-codesign || flutter build ios --release --no-codesign || true
+          # 3. Biên dịch hoàn tất 100% bằng xcodebuild với SYMROOT cố định
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            SYMROOT="$PWD/build/ios" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          echo "🔍 Tìm kiếm Runner.app trong thư mục build và DerivedData..."
+          APP_PATH="build/ios/Release-iphoneos/Runner.app"
           
-          APP_PATH=$(find build /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Tìm kiếm Runner.app trong build..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+          fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app! Kiểm tra danh sách build:"
-            find build -maxdepth 6 2>/dev/null || true
+            echo "❌ Không tìm thấy Runner.app!"
+            find build -maxdepth 6 || true
             exit 1
           fi
           
-          echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
-          echo "📊 Dung lượng ứng dụng đã biên dịch:"
+          echo "✅ Đã tìm thấy Runner.app tại: $APP_PATH"
+          echo "📊 Danh sách file bên trong Runner.app:"
+          ls -la "$APP_PATH"
           du -sh "$APP_PATH"
           
-          # Sao chép vào thư mục Payload chuẩn của iOS IPA
+          # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
           
           # Ký ad-hoc
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Nén Payload thành LoveDay.ipa
+          # Đóng gói zip chuẩn cấu trúc IPA
           zip -r dist/LoveDay.ipa Payload
           
           echo "🎉 Thông tin file IPA hoàn thiện:"
