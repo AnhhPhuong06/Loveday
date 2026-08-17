@@ -25,8 +25,9 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Symlink Flutter Binary to System Path
+      - name: Configure Git and Environment Permissions
         run: |
+          git config --global --add safe.directory "*"
           sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
           sudo ln -sf $(which dart) /usr/local/bin/dart || true
 
@@ -35,7 +36,7 @@ jobs:
           # 1. Tạo scaffold nếu cần
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Tạo Podfile chuẩn iOS 14 và tắt Sandboxing
+          # 2. Tạo Podfile chuẩn iOS 14
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -78,61 +79,47 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Verify Dart Code & Build Flutter Bundle
+      - name: Patch Xcode Project for Unsigned Release
         run: |
-          # 1. Kiểm tra toàn bộ cú pháp mã nguồn Dart
-          flutter analyze || true
+          python3 -c "
+          import re
           
-          # 2. Biên dịch Flutter Release Bundle
-          flutter build bundle --release
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
+              content = f.read()
+          
+          injection = '''buildSettings = {
+          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
+          \t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;
+          \t\t\t\tCODE_SIGN_STYLE = Manual;
+          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
+          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
+          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
+          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
+          
+          content = re.sub(r'buildSettings = \{', injection, content)
+          
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
+              f.write(content)
+          "
+          
+          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
+          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Release.xcconfig
 
-      - name: Build iOS App with Xcodebuild
+      - name: Build iOS Release App with Flutter CLI
         run: |
-          FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
-          
-          # Cấu hình Release.xcconfig
-          cat << EOF > ios/Flutter/Release.xcconfig
-          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
-          #include "Generated.xcconfig"
-          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
-          FLUTTER_APPLICATION_PATH=${PWD}
-          FLUTTER_TARGET=lib/main.dart
-          FLUTTER_BUILD_DIR=build
-          FLUTTER_BUILD_NAME=1.0.0
-          FLUTTER_BUILD_NUMBER=1
-          ENABLE_USER_SCRIPT_SANDBOXING=NO
-          CODE_SIGN_STYLE=Manual
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          CODE_SIGN_IDENTITY=
-          PROVISIONING_PROFILE_SPECIFIER=
-          EOF
-          
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual; ENABLE_USER_SCRIPT_SANDBOXING = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
-          
-          # Biên dịch toàn bộ Native Swift & Frameworks
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            SYMROOT="$PWD/build/ios" \
-            ENABLE_USER_SCRIPT_SANDBOXING=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build
+          # Flutter CLI se tu dong dieu phoi build Dart Release AOT, Asset va Xcode Release
+          flutter build ios --release --no-codesign
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/ios/Release-iphoneos/Runner.app"
+          # Tìm Runner.app đã biên dịch
+          APP_PATH="build/ios/iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong build folder..."
+            echo "Tìm kiếm Runner.app trong build..."
             APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
           fi
           
