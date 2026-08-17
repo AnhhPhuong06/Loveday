@@ -25,26 +25,32 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Git and System Symlinks
+      - name: Configure Git, Assets & System Symlinks
         run: |
           git config --global --add safe.directory "*"
           sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
           sudo ln -sf $(which dart) /usr/local/bin/dart || true
-
-      - name: Build Official Flutter iOS Release Frameworks
-        run: |
-          # 1. Biên dịch chính thức App.xcframework và Flutter.xcframework Release
-          flutter build ios-framework --release --output=build/frameworks --no-universal
           
-          # 2. Tạo scaffold iOS
+          # Đảm bảo toàn bộ thư mục asset tồn tại
+          mkdir -p assets/icons assets/images assets/stickers
+
+      - name: Setup Flutter iOS Native Project & Frameworks
+        run: |
+          # 1. Tạo scaffold iOS trước để sinh AppFrameworkInfo.plist
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 3. Nạp App.framework và Flutter.framework vào ios/Flutter
+          # 2. Sinh sẵn cấu hình Flutter iOS với --no-codesign
+          flutter build ios --config-only --no-codesign
+          
+          # 3. Biên dịch chính thức App.xcframework Release
+          flutter build ios-framework --release --output=build/frameworks --no-universal
+          
+          # 4. Nạp App.framework và Flutter.framework vào ios/Flutter
           mkdir -p ios/Flutter
           cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework ios/Flutter/ 2>/dev/null || true
           cp -r build/frameworks/Release/Flutter.xcframework/ios-arm64/Flutter.framework ios/Flutter/ 2>/dev/null || true
           
-          # 4. Tạo Podfile chuẩn iOS 14
+          # 5. Tạo Podfile chuẩn iOS 14
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -86,7 +92,7 @@ jobs:
           cd ios
           pod install --repo-update
           
-          # Tắt kiểm tra codesign trong script nhúng frameworks
+          # Tắt kiểm tra codesign trong script nhúng frameworks của CocoaPods
           find Pods -name "*-frameworks.sh" -exec sed -i '' 's/code_sign_if_enabled/echo "Skipping codesign for"/g' {} + 2>/dev/null || true
           cd ..
 
