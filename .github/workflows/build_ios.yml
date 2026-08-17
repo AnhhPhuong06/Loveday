@@ -25,12 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Symlink Flutter Binary to System Path
-        run: |
-          sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
-          sudo ln -sf $(which dart) /usr/local/bin/dart || true
-
-      - name: Prepare iOS Project & Dependencies
+      - name: Prepare iOS Native Project & Pods
         run: |
           # 1. Tạo scaffold nếu cần
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
@@ -65,7 +60,6 @@ jobs:
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
                 config.build_settings['ENABLE_BITCODE'] = 'NO'
                 config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
-                config.build_settings['DEVELOPMENT_TEAM'] = 'ABCDE12345'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY'] = ''
@@ -79,11 +73,26 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Inject Complete Flutter Build Environment into XCConfig
+      - name: Pre-compile Dart AOT Release Framework & Assets
         run: |
           FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          # Đảm bảo toàn bộ biến môi trường của Flutter được tiêm trực tiếp vào Xcode configs
+          # Biên dịch trước App.framework (Dart AOT Release) và Flutter Assets
+          flutter assemble \
+            --output=build/ios/Release-iphoneos \
+            -dTargetPlatform=ios \
+            -dTargetFile=lib/main.dart \
+            -dBuildMode=release \
+            -dTreeShakeIcons=false \
+            -dTrackWidgetCreation=true \
+            release_ios_bundle_flutter_assets
+          
+          # Copy App.framework va Flutter.framework vao ios/Flutter de Xcode link truc tiep
+          mkdir -p ios/Flutter
+          cp -r build/ios/Release-iphoneos/App.framework ios/Flutter/ 2>/dev/null || true
+          cp -r "${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine/ios-release/Flutter.xcframework/ios-arm64/Flutter.framework" ios/Flutter/ 2>/dev/null || true
+          
+          # Cau hinh Release.xcconfig
           cat << EOF > ios/Flutter/Release.xcconfig
           #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
           #include "Generated.xcconfig"
@@ -93,12 +102,7 @@ jobs:
           FLUTTER_BUILD_DIR=build
           FLUTTER_BUILD_NAME=1.0.0
           FLUTTER_BUILD_NUMBER=1
-          DART_OBFUSCATION=false
-          TRACK_WIDGET_CREATION=true
-          TREE_SHAKE_ICONS=false
-          PACKAGE_CONFIG=.dart_tool/package_config.json
           ENABLE_USER_SCRIPT_SANDBOXING=NO
-          DEVELOPMENT_TEAM=ABCDE12345
           CODE_SIGN_STYLE=Manual
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
@@ -106,33 +110,21 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=
           EOF
           
-          cat << EOF >> ios/Flutter/Generated.xcconfig
-          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
-          FLUTTER_APPLICATION_PATH=${PWD}
-          ENABLE_USER_SCRIPT_SANDBOXING=NO
-          EOF
-          
-          # Sửa project.pbxproj sang Manual và tắt Sandboxing
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual; ENABLE_USER_SCRIPT_SANDBOXING = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
 
       - name: Build iOS App with Xcodebuild
         run: |
-          # 1. Build Flutter Dart Release Bundle
-          flutter build bundle --release
-          
-          # 2. Biên dịch Xcode trực tiếp với DerivedData cố định
+          # Biên dịch toàn bộ Swift Native và liên kết App.framework đã chuẩn bị sẵn
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DerivedData \
+            SYMROOT="$PWD/build/ios" \
             ENABLE_USER_SCRIPT_SANDBOXING=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
 
@@ -141,11 +133,11 @@ jobs:
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
+          APP_PATH="build/ios/Release-iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong DerivedData..."
-            APP_PATH=$(find build/DerivedData -name "Runner.app" -type d | head -n 1)
+            echo "Tìm kiếm Runner.app trong build folder..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
