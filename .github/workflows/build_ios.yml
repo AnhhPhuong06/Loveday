@@ -1,0 +1,50 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: # Cho phép bấm nút Build thủ công bất cứ lúc nào
+
+jobs:
+  build-ios:
+    name: Build iOS IPA on macOS Runner
+    runs-on: macos-14 # Chạy trên máy Mac ảo miễn phí của GitHub
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build iOS App (.app / Payload)
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: Package Payload into .ipa
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r LoveDay.ipa Payload
+          cd ../../..
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoveDay-iOS-IPA
+          path: build/ios/iphoneos/LoveDay.ipa
+          retention-days: 7
