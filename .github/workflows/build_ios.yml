@@ -23,8 +23,8 @@ jobs:
 
       - name: Generate iOS Native Scaffold & Get Dependencies
         run: |
-          # Khởi tạo đầy đủ cấu trúc Xcode Project chuẩn trên macOS
-          flutter create --platforms=ios --org com.loveday.app .
+          # Khởi tạo đầy đủ cấu trúc Xcode Project chuẩn với tên package chữ thường
+          flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           flutter pub get
 
       - name: Build iOS App (.app Payload)
