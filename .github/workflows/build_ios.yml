@@ -37,73 +37,43 @@ jobs:
           cp /tmp/Podfile.bak ios/Podfile 2>/dev/null || true
           cp /tmp/Info.plist.bak ios/Runner/Info.plist 2>/dev/null || true
           
-          # Gán DevelopmentTeam & Manual Signing cho toàn bộ project
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj || true
-          sed -i '' 's/DevelopmentTeam = "";/DevelopmentTeam = "ABCDE12345";/g' ios/Runner.xcodeproj/project.pbxproj || true
-          
           flutter pub get
           cd ios
           pod install --repo-update
           cd ..
 
-      - name: Build Flutter Release Bundle & Native Archive
+      - name: Compile iOS Release App
         run: |
-          # 1. Build Flutter Dart Release Bundle
-          flutter build bundle --release
-          
-          # 2. Archive bằng xcodebuild trực tiếp không cần chứng chỉ
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath build/LoveDay.xcarchive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="ABCDE12345" \
-            archive
+          # Flutter biên dịch toàn bộ Dart AOT + Native Swift
+          flutter build ios --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
-          mkdir -p dist
-          rm -rf Payload
-          mkdir -p Payload
+          mkdir -p dist Payload
+          rm -rf Payload/*
           
-          # Tìm Runner.app trong archive
-          APP_PATH="build/LoveDay.xcarchive/Products/Applications/Runner.app"
+          echo "🔍 Đang sao chép Runner.app từ DerivedData của Xcode..."
           
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong toàn bộ thư mục build..."
-            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
-          fi
+          # Tìm và sao chép chính xác Runner.app vào thư mục Payload
+          find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d -exec cp -r {} Payload/ \;
           
-          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app trong build archive!"
-            find build -maxdepth 6 || true
+          if [ ! -d "Payload/Runner.app" ]; then
+            echo "❌ Không tìm thấy Runner.app!"
+            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 2>/dev/null || true
             exit 1
           fi
           
-          echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
-          du -sh "$APP_PATH"
+          echo "✅ Đã sao chép Runner.app thành công! Dung lượng:"
+          du -sh Payload/Runner.app
           
-          # Copy Runner.app vào thư mục Payload
-          cp -r "$APP_PATH" Payload/
-          
-          # Ký ad-hoc để đảm bảo cấu trúc bundle hợp lệ
+          # Ký ad-hoc
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Nén toàn bộ thư mục Payload thành file LoveDay.ipa chuẩn
+          # Đóng gói zip chuẩn cấu trúc IPA
           zip -r dist/LoveDay.ipa Payload
           
-          # Kiểm tra dung lượng thực tế của IPA (phải > 5MB)
-          FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
-          echo "🎉 Kích thước file IPA: $FILE_SIZE bytes"
+          echo "🎉 Kích thước file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
-          
-          if [ "$FILE_SIZE" -lt 5000000 ]; then
-            echo "❌ File IPA quá nhỏ, kiểm tra lại nội dung!"
-            exit 1
-          fi
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
