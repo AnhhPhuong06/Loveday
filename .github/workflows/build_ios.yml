@@ -36,8 +36,8 @@ jobs:
           # 1. Tạo scaffold iOS
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Sinh sẵn Flutter.framework và GeneratedPluginRegistrant trước khi chạy CocoaPods
-          flutter build ios --config-only --release
+          # 2. Sinh sẵn Flutter.framework với cờ --no-codesign
+          flutter build ios --config-only --no-codesign
           
           # 3. Tạo Podfile chuẩn iOS 14
           cat << 'EOF' > ios/Podfile
