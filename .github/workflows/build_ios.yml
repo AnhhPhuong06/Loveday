@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate iOS Native Scaffold & Dependencies
+      - name: Generate iOS Native Scaffold & CocoaPods
         run: |
           # Backup cấu hình tùy biến
           cp ios/Podfile /tmp/Podfile.bak 2>/dev/null || true
@@ -42,41 +42,57 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Build iOS Release App with Xcodebuild
+      - name: Inject Team ID & Disable Signing in Xcode Project
         run: |
-          # 1. Export biến môi trường Flutter cần thiết cho xcode_backend.sh
-          export FLUTTER_ROOT="/Users/runner/hostedtoolcache/flutter/stable-3.24.0-arm64/flutter"
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
-          export DART_OBFUSCATION=false
-          export TRACK_WIDGET_CREATION=true
-          export TREE_SHAKE_ICONS=false
-          export PACKAGE_CONFIG=".dart_tool/package_config.json"
+          python3 -c "
+          import re
           
-          # 2. Biên dịch trước Flutter Release Bundle
-          flutter build bundle --release
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
+              content = f.read()
           
-          # 3. Biên dịch hoàn tất 100% bằng xcodebuild với SYMROOT cố định
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            SYMROOT="$PWD/build/ios" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build
+          # Chèn DEVELOPMENT_TEAM vào TẤT CẢ các khối buildSettings của Xcode
+          injection = '''buildSettings = {
+          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
+          \t\t\t\tCODE_SIGN_STYLE = Manual;
+          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
+          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
+          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
+          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
+          
+          content = re.sub(r'buildSettings = \{', injection, content)
+          
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
+              f.write(content)
+          
+          print('✅ Đã tiêm DEVELOPMENT_TEAM = ABCDE12345 vào toàn bộ project.pbxproj thành công!')
+          "
+          
+          mkdir -p ios/Flutter
+          cat << 'EOF' > ios/Flutter/Release.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+          #include "Generated.xcconfig"
+          DEVELOPMENT_TEAM = ABCDE12345
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGNING_ALLOWED = NO
+          CODE_SIGNING_REQUIRED = NO
+          CODE_SIGN_IDENTITY =
+          PROVISIONING_PROFILE_SPECIFIER =
+          EOF
+
+      - name: Build iOS Release App with Flutter
+        run: |
+          # Flutter sẽ tự động quản lý xcode_backend.sh, biên dịch Dart Release và tạo Runner.app
+          flutter build ios --release --no-codesign
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/ios/Release-iphoneos/Runner.app"
+          APP_PATH="build/ios/iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong build..."
+            echo "Tìm kiếm Runner.app trong build folder..."
             APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
           fi
           
@@ -86,21 +102,20 @@ jobs:
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app tại: $APP_PATH"
-          echo "📊 Danh sách file bên trong Runner.app:"
-          ls -la "$APP_PATH"
+          echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
+          echo "📊 Dung lượng ứng dụng đã biên dịch:"
           du -sh "$APP_PATH"
           
           # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
           
-          # Ký ad-hoc
+          # Ký ad-hoc để đảm bảo tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Đóng gói zip chuẩn cấu trúc IPA
+          # Nén Payload thành LoveDay.ipa
           zip -r dist/LoveDay.ipa Payload
           
-          echo "🎉 Thông tin file IPA hoàn thiện:"
+          echo "🎉 Kích thước file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
           # Kiểm tra dung lượng hợp lệ (> 5MB)
