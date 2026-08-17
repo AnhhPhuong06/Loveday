@@ -79,57 +79,54 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Configure Xcode Project for Unsigned Archive
+      - name: Inject Complete Flutter Build Environment into XCConfig
         run: |
-          python3 -c "
-          import re
+          FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
-              content = f.read()
-          
-          injection = '''buildSettings = {
-          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
-          \t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;
-          \t\t\t\tCODE_SIGN_STYLE = Manual;
-          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
-          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
-          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
-          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
-          
-          content = re.sub(r'buildSettings = \{', injection, content)
-          
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
-              f.write(content)
-          "
-          
-          mkdir -p ios/Flutter
-          cat << 'EOF' > ios/Flutter/Release.xcconfig
+          # Đảm bảo toàn bộ biến môi trường của Flutter được tiêm trực tiếp vào Xcode configs
+          cat << EOF > ios/Flutter/Release.xcconfig
           #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
           #include "Generated.xcconfig"
-          DEVELOPMENT_TEAM = ABCDE12345
-          ENABLE_USER_SCRIPT_SANDBOXING = NO
-          CODE_SIGN_STYLE = Manual
-          CODE_SIGNING_ALLOWED = NO
-          CODE_SIGNING_REQUIRED = NO
-          CODE_SIGN_IDENTITY =
-          PROVISIONING_PROFILE_SPECIFIER =
+          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
+          FLUTTER_APPLICATION_PATH=${PWD}
+          FLUTTER_TARGET=lib/main.dart
+          FLUTTER_BUILD_DIR=build
+          FLUTTER_BUILD_NAME=1.0.0
+          FLUTTER_BUILD_NUMBER=1
+          DART_OBFUSCATION=false
+          TRACK_WIDGET_CREATION=true
+          TREE_SHAKE_ICONS=false
+          PACKAGE_CONFIG=.dart_tool/package_config.json
+          ENABLE_USER_SCRIPT_SANDBOXING=NO
+          DEVELOPMENT_TEAM=ABCDE12345
+          CODE_SIGN_STYLE=Manual
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=
+          PROVISIONING_PROFILE_SPECIFIER=
           EOF
           
-          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
-
-      - name: Build Xcode Release Archive
-        run: |
-          # Export FLUTTER_ROOT cho xcodebuild
-          export FLUTTER_ROOT="$(cat ios/Flutter/Generated.xcconfig | grep FLUTTER_ROOT | cut -d '=' -f2)"
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          cat << EOF >> ios/Flutter/Generated.xcconfig
+          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
+          FLUTTER_APPLICATION_PATH=${PWD}
+          ENABLE_USER_SCRIPT_SANDBOXING=NO
+          EOF
           
-          # Biên dịch trực tiếp và tạo LoveDay.xcarchive hoàn chỉnh
+          # Sửa project.pbxproj sang Manual và tắt Sandboxing
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual; ENABLE_USER_SCRIPT_SANDBOXING = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
+
+      - name: Build iOS App with Xcodebuild
+        run: |
+          # 1. Build Flutter Dart Release Bundle
+          flutter build bundle --release
+          
+          # 2. Biên dịch Xcode trực tiếp với DerivedData cố định
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/LoveDay.xcarchive \
+            -derivedDataPath build/DerivedData \
             ENABLE_USER_SCRIPT_SANDBOXING=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -137,18 +134,18 @@ jobs:
             PROVISIONING_PROFILE="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            archive
+            build
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/LoveDay.xcarchive/Products/Applications/Runner.app"
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong build archive..."
-            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+            echo "Tìm kiếm Runner.app trong DerivedData..."
+            APP_PATH=$(find build/DerivedData -name "Runner.app" -type d | head -n 1)
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
@@ -161,10 +158,10 @@ jobs:
           echo "📊 Kích thước Runner.app:"
           du -sh "$APP_PATH"
           
-          # Copy Runner.app vào thư mục Payload chuẩn iOS
+          # Copy toàn bộ Runner.app vào thư mục Payload chuẩn iOS
           cp -r "$APP_PATH" Payload/
           
-          # Ký Ad-hoc để bundle hợp lệ với Sideloadly / TrollStore
+          # Ký Ad-hoc để bundle hợp lệ
           codesign --force --deep --sign - Payload/Runner.app || true
           
           # Nén Payload thành LoveDay.ipa
@@ -173,7 +170,7 @@ jobs:
           echo "🎉 Kích thước file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
-          # Xác thực dung lượng thực (> 5MB)
+          # Kiểm tra dung lượng hợp lệ (> 5MB)
           FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
           echo "Dung lượng chính xác: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 5000000 ]; then

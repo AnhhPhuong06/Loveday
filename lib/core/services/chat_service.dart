@@ -18,27 +18,25 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _subscription = _supabase.channel('public:messages:couple_$coupleId')
+      _subscription = _supabase.channel('messages_$coupleId')
           .onPostgresChanges(
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'messages',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'couple_id',
-              value: coupleId,
-            ),
             callback: (payload) {
-              final newMsg = MessageModel.fromJson(payload.newRecord);
-              _messages.insert(0, newMsg);
-              notifyListeners();
+              final newRecord = payload.newRecord;
+              if (newRecord['couple_id'] == coupleId) {
+                final newMsg = MessageModel.fromJson(newRecord);
+                _messages.insert(0, newMsg);
+                notifyListeners();
+              }
             },
           )
           .subscribe();
 
       _loadInitialMessages(coupleId);
     } catch (e) {
-      debugPrint('Realtime Chat Error: $e');
+      debugPrint('Realtime Chat Notice (Using demo fallback): $e');
       _populateMockMessages(coupleId);
     }
   }
@@ -90,7 +88,7 @@ class ChatService extends ChangeNotifier {
         'type': type,
       });
     } catch (e) {
-      debugPrint('Send Message Server Error: $e');
+      debugPrint('Send Message Notice: $e');
     }
   }
 
