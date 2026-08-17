@@ -81,7 +81,7 @@ jobs:
           cd ios
           pod install --repo-update
           
-          # Tắt kiểm tra signing trong script nhúng frameworks của CocoaPods
+          # Tắt kiểm tra codesign trong script nhúng frameworks
           find Pods -name "*-frameworks.sh" -exec sed -i '' 's/code_sign_if_enabled/echo "Skipping codesign for"/g' {} + 2>/dev/null || true
           cd ..
 
@@ -137,32 +137,32 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=
           EOF
 
-      - name: Build Xcode Release Archive
+      - name: Build iOS App with Xcodebuild
         run: |
-          # Biên dịch trực tiếp tạo file LoveDay.xcarchive hoàn chỉnh
+          # Biên dịch trực tiếp tạo Runner.app trong build/DerivedData
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/LoveDay.xcarchive \
+            -derivedDataPath build/DerivedData \
             ENABLE_USER_SCRIPT_SANDBOXING=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            archive
+            build
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/LoveDay.xcarchive/Products/Applications/Runner.app"
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "🔍 Tìm kiếm Runner.app trong build..."
-            APP_PATH=$(find build -name "Runner.app" -type d 2>/dev/null | head -n 1)
+            echo "🔍 Tìm kiếm Runner.app trong DerivedData..."
+            APP_PATH=$(find build/DerivedData /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
