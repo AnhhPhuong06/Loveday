@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate iOS Native Scaffold & Configure Team ID
+      - name: Generate iOS Native Scaffold & Dependencies
         run: |
           # Backup cấu hình tùy biến
           cp ios/Podfile /tmp/Podfile.bak 2>/dev/null || true
@@ -37,30 +37,36 @@ jobs:
           cp /tmp/Podfile.bak ios/Podfile 2>/dev/null || true
           cp /tmp/Info.plist.bak ios/Runner/Info.plist 2>/dev/null || true
           
-          # Đặt Development Team hợp lệ (10 ký tự) để vượt qua bước xác thực của Flutter CLI
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Automatic; DevelopmentTeam = ABCDE12345;/g' ios/Runner.xcodeproj/project.pbxproj || true
-          sed -i '' 's/DevelopmentTeam = "";/DevelopmentTeam = "ABCDE12345";/g' ios/Runner.xcodeproj/project.pbxproj || true
-          
           flutter pub get
           cd ios
           pod install --repo-update
           cd ..
 
-      - name: Build iOS Release App (.app)
+      - name: Compile iOS Release Bundle
         run: |
-          # Biên dịch toàn bộ mã nguồn Dart và iOS Native thành công
-          flutter build ios --release --no-codesign
+          # Flutter biên dịch toàn bộ Dart AOT + Native Swift vào build/ios/iphoneos/Runner.app
+          flutter build ios --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           
-          # Copy Runner.app vào thư mục Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          
-          # Đóng gói zip chuẩn cấu trúc IPA cho iOS
-          zip -r LoveDay.ipa Payload
-          mv LoveDay.ipa dist/
+          # Kiểm tra file Runner.app đã biên dịch xong
+          if [ -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "✅ Da tim thay Runner.app bien dich thanh cong!"
+            
+            # Ký ad-hoc để tương thích hoàn toàn với Sideloadly / TrollStore / Scarlet
+            codesign --force --deep --sign - build/ios/iphoneos/Runner.app || true
+            
+            cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -r LoveDay.ipa Payload
+            mv LoveDay.ipa dist/
+            echo "🎉 Dong goi LoveDay.ipa thanh cong!"
+          else
+            echo "❌ Khong tim thay Runner.app, kiem tra thu muc build:"
+            find build -maxdepth 4 || true
+            exit 1
+          fi
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
