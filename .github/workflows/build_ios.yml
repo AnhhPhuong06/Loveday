@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Git, Assets & System Symlinks
+      - name: Configure Git, Assets & System Environment
         run: |
           git config --global --add safe.directory "*"
           sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
@@ -34,23 +34,12 @@ jobs:
           # Đảm bảo toàn bộ thư mục asset tồn tại
           mkdir -p assets/icons assets/images assets/stickers
 
-      - name: Setup Flutter iOS Native Project & Frameworks
+      - name: Setup iOS Project & CocoaPods
         run: |
           # 1. Tạo scaffold iOS
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Sinh sẵn cấu hình Flutter iOS với --no-codesign
-          flutter build ios --config-only --no-codesign
-          
-          # 3. Biên dịch chính thức App.xcframework Release
-          flutter build ios-framework --release --output=build/frameworks --no-universal
-          
-          # 4. Nạp App.framework và Flutter.framework vào ios/Flutter
-          mkdir -p ios/Flutter
-          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework ios/Flutter/ 2>/dev/null || true
-          cp -r build/frameworks/Release/Flutter.xcframework/ios-arm64/Flutter.framework ios/Flutter/ 2>/dev/null || true
-          
-          # 5. Tạo Podfile chuẩn iOS 14
+          # 2. Tạo Podfile chuẩn iOS 14 và tắt hoàn toàn Script Sandboxing của Xcode 16
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -80,90 +69,44 @@ jobs:
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
                 config.build_settings['ENABLE_BITCODE'] = 'NO'
                 config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
-                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-                config.build_settings['CODE_SIGN_IDENTITY'] = ''
-                config.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
               end
             end
           end
           EOF
           
+          flutter pub get
           cd ios
           pod install --repo-update
-          
-          # Tắt kiểm tra codesign trong script nhúng frameworks của CocoaPods
-          find Pods -name "*-frameworks.sh" -exec sed -i '' 's/code_sign_if_enabled/echo "Skipping codesign for"/g' {} + 2>/dev/null || true
           cd ..
 
-      - name: Configure Xcode Project & Release Config
+      - name: Disable Xcode 16 Sandboxing in Project Settings
         run: |
-          FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
-          
-          # Sử dụng Python thay thế xcode_backend.sh bằng exit 0 trong project.pbxproj
-          python3 -c '
-          with open("ios/Runner.xcodeproj/project.pbxproj", "r") as f:
+          python3 -c "
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
               s = f.read()
           
           import re
-          s = re.sub(r"shellScript = \"[^\"]*xcode_backend\.sh[^\"]*\";", "shellScript = \"exit 0;\";", s)
-          s = re.sub(r"CODE_SIGN_STYLE = Automatic;", "CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";", s)
+          s = re.sub(r'buildSettings = \{', 'buildSettings = {\n\t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;\n\t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;', s)
           
-          with open("ios/Runner.xcodeproj/project.pbxproj", "w") as f:
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
               f.write(s)
+          "
           
-          print("✅ Đã cấu hình project.pbxproj!")
-          '
-          
-          cat << EOF > ios/Flutter/Release.xcconfig
-          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
-          #include "Generated.xcconfig"
-          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
-          FLUTTER_APPLICATION_PATH=${PWD}
-          FLUTTER_TARGET=lib/main.dart
-          FLUTTER_BUILD_DIR=build
-          FLUTTER_BUILD_NAME=1.0.0
-          FLUTTER_BUILD_NUMBER=1
-          ENABLE_USER_SCRIPT_SANDBOXING=NO
-          CODE_SIGN_STYLE=Manual
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          CODE_SIGN_IDENTITY=
-          PROVISIONING_PROFILE_SPECIFIER=
-          EOF
+          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
+          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Release.xcconfig
 
-      - name: Build iOS App with Xcodebuild
+      - name: Build iOS IPA with Flutter Official Command
         run: |
-          set +e
-          # Biên dịch trực tiếp tạo Runner.app trong build/DerivedData
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DerivedData \
-            ENABLE_USER_SCRIPT_SANDBOXING=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_ENTITLEMENTS="" \
-            ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | tee xcodebuild.log
-          
-          XCODE_EXIT=$?
-          if [ $XCODE_EXIT -ne 0 ]; then
-            echo "❌ CHI TIẾT LỖI XCODEBUILD:"
-            grep -C 3 -E "error:|fatal error:|failed with exit code" xcodebuild.log || tail -n 80 xcodebuild.log
-            exit $XCODE_EXIT
-          fi
+          # Dùng lệnh chính thức flutter build ipa --no-codesign để tạo trọn vẹn bundle
+          flutter build ipa --release --no-codesign
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH=$(find build/DerivedData /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
+          # Tìm gói Runner.app đã biên dịch đầy đủ
+          APP_PATH=$(find build -name "Runner.app" -type d 2>/dev/null | head -n 1)
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app!"
@@ -172,23 +115,11 @@ jobs:
           fi
           
           echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "📊 Kích thước gói ứng dụng:"
+          du -sh "$APP_PATH"
           
-          # Copy toàn bộ Runner.app vào thư mục Payload
+          # Copy toàn bộ Runner.app vào thư mục Payload chuẩn iOS
           cp -r "$APP_PATH" Payload/
-          
-          # Nạp App.framework và Flutter.framework vào Runner.app/Frameworks
-          mkdir -p Payload/Runner.app/Frameworks
-          cp -r ios/Flutter/Flutter.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
-          cp -r ios/Flutter/App.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
-          
-          # Nạp Flutter Assets
-          mkdir -p Payload/Runner.app/flutter_assets
-          mkdir -p Payload/Runner.app/Frameworks/App.framework/flutter_assets
-          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework/flutter_assets/* Payload/Runner.app/flutter_assets/ 2>/dev/null || true
-          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework/flutter_assets/* Payload/Runner.app/Frameworks/App.framework/flutter_assets/ 2>/dev/null || true
-          
-          echo "📊 Kích thước gói ứng dụng hoàn thiện:"
-          du -sh Payload/Runner.app
           
           # Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
