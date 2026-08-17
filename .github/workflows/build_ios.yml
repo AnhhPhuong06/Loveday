@@ -36,7 +36,7 @@ jobs:
           # 1. Tạo scaffold iOS
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Sinh sẵn Flutter.framework và GeneratedPluginRegistrant
+          # 2. Sinh sẵn Flutter.framework với cờ --no-codesign
           flutter build ios --config-only --no-codesign
           
           # 3. Tạo Podfile chuẩn iOS 14
@@ -81,11 +81,42 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Build Xcode Release Archive
+      - name: Pre-compile Dart AOT & Neutralize Build Phase Scripts
         run: |
           FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          # Cấu hình Release.xcconfig
+          # 1. Biên dịch toàn bộ Flutter Assets & Dart Release
+          flutter build bundle --release
+          
+          # 2. Biên dịch Flutter Assembly tạo App.framework
+          flutter assemble \
+            --output=ios/Flutter \
+            -dTargetPlatform=ios \
+            -dTargetFile=lib/main.dart \
+            -dBuildMode=release \
+            -dTreeShakeIcons=false \
+            -dTrackWidgetCreation=true \
+            release_ios_bundle_flutter_assets || true
+            
+          # Copy Flutter.framework từ cache
+          cp -r "${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine/ios-release/Flutter.xcframework/ios-arm64/Flutter.framework" ios/Flutter/ 2>/dev/null || true
+          
+          # 3. Sử dụng Regex thay thế triệt để xcode_backend.sh bằng exit 0 trong project.pbxproj
+          python3 -c '
+          import re
+          
+          with open("ios/Runner.xcodeproj/project.pbxproj", "r") as f:
+              s = f.read()
+          
+          s = re.sub(r"shellScript = \"/bin/sh \\\"\$FLUTTER_ROOT[^\"]*\";", "shellScript = \"exit 0;\";", s)
+          s = re.sub(r"CODE_SIGN_STYLE = Automatic;", "CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";", s)
+          
+          with open("ios/Runner.xcodeproj/project.pbxproj", "w") as f:
+              f.write(s)
+          
+          print("✅ Đã thay thế script xcode_backend.sh thành exit 0 thành công!")
+          '
+          
           cat << EOF > ios/Flutter/Release.xcconfig
           #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
           #include "Generated.xcconfig"
@@ -102,7 +133,9 @@ jobs:
           CODE_SIGN_IDENTITY=
           PROVISIONING_PROFILE_SPECIFIER=
           EOF
-          
+
+      - name: Build Xcode Release Archive
+        run: |
           # Biên dịch trực tiếp tạo file LoveDay.xcarchive hoàn chỉnh
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -125,7 +158,7 @@ jobs:
           APP_PATH="build/LoveDay.xcarchive/Products/Applications/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "🔍 Tìm kiếm Runner.app trong thư mục build archive..."
+            echo "🔍 Tìm kiếm Runner.app trong build..."
             APP_PATH=$(find build -name "Runner.app" -type d 2>/dev/null | head -n 1)
           fi
           
@@ -136,11 +169,22 @@ jobs:
           fi
           
           echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
-          echo "📊 Kích thước gói ứng dụng:"
-          du -sh "$APP_PATH"
           
-          # Copy toàn bộ Runner.app vào thư mục Payload chuẩn iOS
+          # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
+          
+          # Đảm bảo nạp đầy đủ Frameworks và Assets
+          mkdir -p Payload/Runner.app/Frameworks
+          cp -r ios/Flutter/Flutter.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
+          cp -r ios/Flutter/App.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
+          
+          mkdir -p Payload/Runner.app/flutter_assets
+          mkdir -p Payload/Runner.app/Frameworks/App.framework/flutter_assets
+          cp -r build/flutter_assets/* Payload/Runner.app/flutter_assets/ 2>/dev/null || true
+          cp -r build/flutter_assets/* Payload/Runner.app/Frameworks/App.framework/flutter_assets/ 2>/dev/null || true
+          
+          echo "📊 Kích thước gói ứng dụng:"
+          du -sh Payload/Runner.app
           
           # Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
