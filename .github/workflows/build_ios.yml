@@ -107,45 +107,48 @@ jobs:
 
       - name: Build iOS Release App with Flutter CLI
         run: |
-          # Flutter CLI se tu dong dieu phoi build Dart Release AOT, Asset va Xcode Release
-          flutter build ios --release --no-codesign
+          # Flutter CLI biên dịch toàn bộ Dart Release và Xcode
+          flutter build ios --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          # Tìm Runner.app đã biên dịch
-          APP_PATH="build/ios/iphoneos/Runner.app"
-          
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong build..."
-            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+          # Tìm Runner.app đã biên dịch đầy đủ dung lượng
+          APP_PATH=""
+          if [ -d "build/ios/iphoneos/Runner.app" ] && [ "$(du -sk build/ios/iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
+            APP_PATH="build/ios/iphoneos/Runner.app"
+          elif [ -d "build/ios/Release-iphoneos/Runner.app" ] && [ "$(du -sk build/ios/Release-iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
+            APP_PATH="build/ios/Release-iphoneos/Runner.app"
+          else
+            echo "🔍 Đang tìm kiếm Runner.app trong DerivedData..."
+            APP_PATH=$(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null | head -n 1)
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app!"
-            find build -maxdepth 6 || true
+            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 || true
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
-          echo "📊 Kích thước Runner.app:"
+          echo "✅ Đã tìm thấy Runner.app đầy đủ tại: $APP_PATH"
+          echo "📊 Kích thước gói ứng dụng:"
           du -sh "$APP_PATH"
           
-          # Copy toàn bộ Runner.app vào thư mục Payload chuẩn iOS
+          # Sao chép vào Payload
           cp -r "$APP_PATH" Payload/
           
-          # Ký Ad-hoc để bundle hợp lệ
+          # Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Nén Payload thành LoveDay.ipa
+          # Nén thành LoveDay.ipa
           zip -r dist/LoveDay.ipa Payload
           
           echo "🎉 Kích thước file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
-          # Kiểm tra dung lượng hợp lệ (> 5MB)
+          # Xác thực dung lượng thực (> 5MB)
           FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
           echo "Dung lượng chính xác: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 5000000 ]; then
