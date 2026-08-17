@@ -31,15 +31,20 @@ jobs:
           sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
           sudo ln -sf $(which dart) /usr/local/bin/dart || true
 
-      - name: Setup Flutter Frameworks & CocoaPods
+      - name: Build Official Flutter iOS Release Frameworks
         run: |
-          # 1. Tạo scaffold iOS
+          # 1. Biên dịch chính thức App.xcframework và Flutter.xcframework Release
+          flutter build ios-framework --release --output=build/frameworks --no-universal
+          
+          # 2. Tạo scaffold iOS
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Sinh sẵn Flutter.framework với cờ --no-codesign
-          flutter build ios --config-only --no-codesign
+          # 3. Nạp App.framework và Flutter.framework vào ios/Flutter
+          mkdir -p ios/Flutter
+          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework ios/Flutter/ 2>/dev/null || true
+          cp -r build/frameworks/Release/Flutter.xcframework/ios-arm64/Flutter.framework ios/Flutter/ 2>/dev/null || true
           
-          # 3. Tạo Podfile chuẩn iOS 14
+          # 4. Tạo Podfile chuẩn iOS 14
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -85,27 +90,11 @@ jobs:
           find Pods -name "*-frameworks.sh" -exec sed -i '' 's/code_sign_if_enabled/echo "Skipping codesign for"/g' {} + 2>/dev/null || true
           cd ..
 
-      - name: Pre-compile Dart AOT & Neutralize Build Phase Scripts
+      - name: Configure Xcode Project & Release Config
         run: |
           FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          # 1. Biên dịch toàn bộ Flutter Assets & Dart Release
-          flutter build bundle --release
-          
-          # 2. Biên dịch Flutter Assembly tạo App.framework
-          flutter assemble \
-            --output=ios/Flutter \
-            -dTargetPlatform=ios \
-            -dTargetFile=lib/main.dart \
-            -dBuildMode=release \
-            -dTreeShakeIcons=false \
-            -dTrackWidgetCreation=true \
-            release_ios_bundle_flutter_assets || true
-            
-          # Copy Flutter.framework từ cache
-          cp -r "${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine/ios-release/Flutter.xcframework/ios-arm64/Flutter.framework" ios/Flutter/ 2>/dev/null || true
-          
-          # 3. Sử dụng Python thay thế xcode_backend.sh bằng exit 0 trong project.pbxproj
+          # Sử dụng Python thay thế xcode_backend.sh bằng exit 0 trong project.pbxproj
           python3 -c '
           with open("ios/Runner.xcodeproj/project.pbxproj", "r") as f:
               s = f.read()
@@ -117,7 +106,7 @@ jobs:
           with open("ios/Runner.xcodeproj/project.pbxproj", "w") as f:
               f.write(s)
           
-          print("✅ Đã cập nhật project.pbxproj thành công!")
+          print("✅ Đã cấu hình project.pbxproj!")
           '
           
           cat << EOF > ios/Flutter/Release.xcconfig
@@ -158,12 +147,7 @@ jobs:
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
-          
-          if [ ! -d "$APP_PATH" ]; then
-            echo "🔍 Tìm kiếm Runner.app trong DerivedData..."
-            APP_PATH=$(find build/DerivedData /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
-          fi
+          APP_PATH=$(find build/DerivedData /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app!"
@@ -176,17 +160,18 @@ jobs:
           # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
           
-          # Đảm bảo nạp đầy đủ Frameworks và Assets
+          # Nạp App.framework và Flutter.framework vào Runner.app/Frameworks
           mkdir -p Payload/Runner.app/Frameworks
           cp -r ios/Flutter/Flutter.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
           cp -r ios/Flutter/App.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
           
+          # Nạp Flutter Assets
           mkdir -p Payload/Runner.app/flutter_assets
           mkdir -p Payload/Runner.app/Frameworks/App.framework/flutter_assets
-          cp -r build/flutter_assets/* Payload/Runner.app/flutter_assets/ 2>/dev/null || true
-          cp -r build/flutter_assets/* Payload/Runner.app/Frameworks/App.framework/flutter_assets/ 2>/dev/null || true
+          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework/flutter_assets/* Payload/Runner.app/flutter_assets/ 2>/dev/null || true
+          cp -r build/frameworks/Release/App.xcframework/ios-arm64/App.framework/flutter_assets/* Payload/Runner.app/Frameworks/App.framework/flutter_assets/ 2>/dev/null || true
           
-          echo "📊 Kích thước gói ứng dụng:"
+          echo "📊 Kích thước gói ứng dụng hoàn thiện:"
           du -sh Payload/Runner.app
           
           # Ký Ad-hoc để tương thích Sideloadly / TrollStore
