@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate iOS Native Scaffold & Dependencies
+      - name: Generate iOS Native Scaffold & Pods
         run: |
           # Backup cấu hình tùy biến
           cp ios/Podfile /tmp/Podfile.bak 2>/dev/null || true
@@ -37,33 +37,45 @@ jobs:
           cp /tmp/Podfile.bak ios/Podfile 2>/dev/null || true
           cp /tmp/Info.plist.bak ios/Runner/Info.plist 2>/dev/null || true
           
-          flutter pub get
-
-      - name: Configure Xcode Signing Bypass
-        run: |
-          mkdir -p ios/Flutter
-          cat << 'EOF' >> ios/Flutter/Release.xcconfig
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          CODE_SIGN_IDENTITY=
-          EXPANDED_CODE_SIGN_IDENTITY=
-          EOF
+          # Chuyển đổi Signing sang Manual để tắt kiểm tra Development Team
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj || true
           
-          cat << 'EOF' >> ios/Flutter/Debug.xcconfig
-          CODE_SIGNING_ALLOWED=NO
-          CODE_SIGNING_REQUIRED=NO
-          CODE_SIGN_IDENTITY=
-          EXPANDED_CODE_SIGN_IDENTITY=
-          EOF
+          flutter pub get
+          cd ios
+          pod install
+          cd ..
 
-      - name: Build iOS App (.app with No Code Sign)
+      - name: Build iOS App with Xcodebuild (Unsigned)
         run: |
-          flutter build ios --release --no-codesign
+          # Chuẩn bị Flutter Assets & Generated configs
+          flutter build ios --release --no-codesign --config-only
+          
+          # Biên dịch trực tiếp qua xcodebuild với cờ bỏ qua Signing
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM="" \
+            build
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
+          
+          # Copy Runner.app vào thư mục Payload
+          if [ -d "build/DerivedData/Build/Products/Release-iphoneos/Runner.app" ]; then
+            cp -r build/DerivedData/Build/Products/Release-iphoneos/Runner.app Payload/
+          elif [ -d "build/ios/iphoneos/Runner.app" ]; then
+            cp -r build/ios/iphoneos/Runner.app Payload/
+          fi
+          
+          # Đóng gói zip chuẩn cấu trúc IPA cho iOS
           zip -r LoveDay.ipa Payload
           mv LoveDay.ipa dist/
 
