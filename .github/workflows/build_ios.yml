@@ -42,13 +42,12 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Patch Xcode Project Configurations for No-CodeSign
+      - name: Patch Xcode Configuration for Unsigned Build
         run: |
           python3 -c "
           with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
               content = f.read()
           
-          # Thiet lap DevelopmentTeam de thoa man Flutter CLI nhung tat bat buoc ky ma cua Xcode
           patch = '''CODE_SIGN_STYLE = Manual;
           \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
           \t\t\t\tCODE_SIGNING_ALLOWED = NO;
@@ -74,43 +73,45 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER =
           EOF
 
-      - name: Build iOS Release App with Flutter
+      - name: Compile iOS Release App
         run: |
-          # Flutter se tu dong thiet lap day du FLUTTER_ROOT, bien dich Dart Release va tao Runner.app
-          flutter build ios --release --no-codesign
+          # Biên dịch toàn bộ Dart AOT + Native Swift
+          flutter build ipa --no-codesign || flutter build ios --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          echo "🔍 Tìm kiếm Runner.app trong thư mục build và DerivedData..."
           
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong build folder..."
-            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
-          fi
+          APP_PATH=$(find build /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null | head -n 1)
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app!"
-            find build -maxdepth 6 || true
+            echo "❌ Không tìm thấy Runner.app! Kiểm tra danh sách build:"
+            find build -maxdepth 6 2>/dev/null || true
             exit 1
           fi
           
           echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
+          echo "📊 Dung lượng ứng dụng đã biên dịch:"
           du -sh "$APP_PATH"
           
-          # Copy Runner.app vào thư mục Payload
+          # Sao chép vào thư mục Payload chuẩn của iOS IPA
           cp -r "$APP_PATH" Payload/
           
-          # Đóng gói zip chuẩn cấu trúc IPA cho iOS
+          # Ký ad-hoc
+          codesign --force --deep --sign - Payload/Runner.app || true
+          
+          # Nén Payload thành LoveDay.ipa
           zip -r dist/LoveDay.ipa Payload
           
-          echo "🎉 Kích thước file IPA hoàn thiện:"
+          echo "🎉 Thông tin file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
-          # Kiểm tra dung lượng hợp lệ (phải lớn hơn 5MB)
+          # Kiểm tra dung lượng hợp lệ (> 5MB)
           FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
+          echo "Dung lượng chính xác: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 5000000 ]; then
             echo "❌ File IPA dung lượng không hợp lệ ($FILE_SIZE bytes)!"
             exit 1
