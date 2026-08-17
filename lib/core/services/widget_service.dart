@@ -6,7 +6,7 @@ class WidgetService {
   static const String iOSWidgetName = 'LoveDayWidget';
   static const String androidWidgetName = 'LoveDayAppWidgetProvider';
 
-  /// Cập nhật dữ liệu đếm ngày ra màn hình chính
+  /// Cập nhật dữ liệu đếm ngày ra màn hình chính (đầy đủ)
   static Future<void> updateLoveDayWidget({
     required int totalDays,
     required String coupleNames,
@@ -29,5 +29,14 @@ class WidgetService {
     } catch (e) {
       debugPrint('Update Home Widget Error: $e');
     }
+  }
+
+  /// Cập nhật nhanh số ngày và tên cặp đôi ra Widget
+  static Future<void> updateLoveDays(int days, String coupleNames) async {
+    await updateLoveDayWidget(
+      totalDays: days,
+      coupleNames: coupleNames,
+      currentStreak: 1,
+    );
   }
 }

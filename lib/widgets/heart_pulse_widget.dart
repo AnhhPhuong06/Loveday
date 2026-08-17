@@ -4,11 +4,13 @@ import '../core/theme/app_colors.dart';
 class HeartPulseWidget extends StatefulWidget {
   final double size;
   final VoidCallback? onTap;
+  final Color? color;
 
   const HeartPulseWidget({
     super.key,
     this.size = 80.0,
     this.onTap,
+    this.color,
   });
 
   @override
@@ -41,6 +43,8 @@ class _HeartPulseWidgetState extends State<HeartPulseWidget>
 
   @override
   Widget build(BuildContext context) {
+    final activeColor = widget.color ?? AppColors.primary;
+
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedBuilder(
@@ -53,20 +57,21 @@ class _HeartPulseWidgetState extends State<HeartPulseWidget>
               height: widget.size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: AppColors.loveGradient,
+                color: widget.color != null ? activeColor : null,
+                gradient: widget.color == null ? AppColors.loveGradient : null,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.45),
-                    blurRadius: 20,
-                    spreadRadius: 4,
+                    color: activeColor.withOpacity(0.55),
+                    blurRadius: 16,
+                    spreadRadius: 3,
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Icon(
                   Icons.favorite_rounded,
                   color: Colors.white,
-                  size: 40,
+                  size: widget.size * 0.55,
                 ),
               ),
             ),
