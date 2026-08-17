@@ -25,12 +25,18 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Prepare iOS Project & Pods
+      - name: Symlink Flutter Binary to System Path
+        run: |
+          # Đảm bảo Xcode Run Script luôn tìm thấy lệnh flutter và dart
+          sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
+          sudo ln -sf $(which dart) /usr/local/bin/dart || true
+
+      - name: Prepare iOS Project & Dependencies
         run: |
           # 1. Tạo scaffold nếu cần
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Tạo Podfile chuẩn iOS 14 và tắt User Script Sandboxing của Xcode 16
+          # 2. Tạo Podfile chuẩn iOS 14
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -60,6 +66,7 @@ jobs:
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
                 config.build_settings['ENABLE_BITCODE'] = 'NO'
                 config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+                config.build_settings['DEVELOPMENT_TEAM'] = 'ABCDE12345'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY'] = ''
@@ -73,87 +80,87 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Fix Xcode 16 User Script Sandboxing & Signing
+      - name: Configure Xcode Project for Unsigned Archive
         run: |
-          # Tắt cơ chế chặn User Script Sandboxing của Xcode 16
-          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
-          echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Generated.xcconfig
-          echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Generated.xcconfig
-          echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
-          
-          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Release.xcconfig
-          echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Release.xcconfig
-          echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Release.xcconfig
-          echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Release.xcconfig
-          
-          # Cập nhật project.pbxproj tắt Sandboxing cho tất cả targets
           python3 -c "
+          import re
+          
           with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
               content = f.read()
           
-          content = content.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;\n\t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";')
+          # Tiêm Team ID va tat Sandboxing vao tat ca cac block buildSettings
+          injection = '''buildSettings = {
+          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
+          \t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;
+          \t\t\t\tCODE_SIGN_STYLE = Manual;
+          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
+          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
+          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
+          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
+          
+          content = re.sub(r'buildSettings = \{', injection, content)
           
           with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
               f.write(content)
           "
-
-      - name: Build iOS App with Xcodebuild
-        run: |
-          # Export FLUTTER_ROOT
-          export FLUTTER_ROOT="$(cat ios/Flutter/Generated.xcconfig | grep FLUTTER_ROOT | cut -d '=' -f2)"
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
           
-          # Biên dịch trực tiếp qua xcodebuild
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DerivedData \
-            ENABLE_USER_SCRIPT_SANDBOXING=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build
+          mkdir -p ios/Flutter
+          cat << 'EOF' > ios/Flutter/Release.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+          #include "Generated.xcconfig"
+          DEVELOPMENT_TEAM = ABCDE12345
+          ENABLE_USER_SCRIPT_SANDBOXING = NO
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGNING_ALLOWED = NO
+          CODE_SIGNING_REQUIRED = NO
+          CODE_SIGN_IDENTITY =
+          PROVISIONING_PROFILE_SPECIFIER =
+          EOF
+          
+          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
+
+      - name: Build iOS IPA Package with Flutter
+        run: |
+          # Su dung lenh chinh thuc flutter build ipa --no-codesign
+          flutter build ipa --no-codesign --release
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
-          
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong derived data..."
-            APP_PATH=$(find build/DerivedData -name "Runner.app" -type d | head -n 1)
+          # 1. Tìm kiếm Runner.app trong build archive
+          if [ -d "build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app" ]; then
+            echo "✅ Tìm thấy Runner.app trong Runner.xcarchive!"
+            cp -r "build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app" Payload/
+          elif [ -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "✅ Tìm thấy Runner.app trong build/ios/iphoneos!"
+            cp -r "build/ios/iphoneos/Runner.app" Payload/
+          else
+            echo "Tìm kiếm Runner.app trong toàn bộ thư mục build..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+            cp -r "$APP_PATH" Payload/
           fi
           
-          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app!"
+          if [ ! -d "Payload/Runner.app" ]; then
+            echo "❌ Không thể sao chép Runner.app!"
             find build -maxdepth 6 || true
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app tại: $APP_PATH"
-          echo "📊 Kích thước Runner.app:"
-          du -sh "$APP_PATH"
+          echo "📊 Kích thước Runner.app thực tế:"
+          du -sh Payload/Runner.app
           
-          # Copy vào thư mục Payload chuẩn iOS
-          cp -r "$APP_PATH" Payload/
-          
-          # Ký Ad-hoc để bundle hợp lệ
+          # 2. Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Nén thành LoveDay.ipa
+          # 3. Đóng gói zip chuẩn cấu trúc IPA
           zip -r dist/LoveDay.ipa Payload
           
-          echo "🎉 Kích thước file IPA hoàn chỉnh:"
+          echo "🎉 Thông tin file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
-          # Xác thực dung lượng thực (> 5MB)
+          # 4. Kiểm tra dung lượng hợp lệ (> 5MB)
           FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
           echo "Dung lượng chính xác: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 5000000 ]; then
