@@ -115,34 +115,37 @@ jobs:
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          # Tìm Runner.app đã biên dịch đầy đủ dung lượng
+          echo "🔍 Quét tìm tất cả các thư mục Runner.app trên máy chủ macOS..."
+          find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d -exec du -sh {} + 2>/dev/null || true
+          
+          # Lọc chính xác thư mục Runner.app có dung lượng thực (> 5MB)
           APP_PATH=""
-          if [ -d "build/ios/iphoneos/Runner.app" ] && [ "$(du -sk build/ios/iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
-            APP_PATH="build/ios/iphoneos/Runner.app"
-          elif [ -d "build/ios/Release-iphoneos/Runner.app" ] && [ "$(du -sk build/ios/Release-iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
-            APP_PATH="build/ios/Release-iphoneos/Runner.app"
-          else
-            echo "🔍 Đang tìm kiếm Runner.app trong DerivedData..."
-            APP_PATH=$(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null | head -n 1)
-          fi
+          for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
+            SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
+            echo "Kiểm tra gói: $p -> Dung lượng: $SIZE_KB KB"
+            if [ "$SIZE_KB" -gt 5000 ]; then
+              APP_PATH="$p"
+              break
+            fi
+          done
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app!"
-            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 || true
+            echo "❌ Không tìm thấy Runner.app có dung lượng thực tế!"
+            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 2>/dev/null || true
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app đầy đủ tại: $APP_PATH"
-          echo "📊 Kích thước gói ứng dụng:"
+          echo "✅ Đã chọn Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "📊 Kích thước gói ứng dụng đã biên dịch:"
           du -sh "$APP_PATH"
           
-          # Sao chép vào Payload
+          # Sao chép vào thư mục Payload chuẩn iOS
           cp -r "$APP_PATH" Payload/
           
           # Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
           
-          # Nén thành LoveDay.ipa
+          # Nén Payload thành LoveDay.ipa
           zip -r dist/LoveDay.ipa Payload
           
           echo "🎉 Kích thước file IPA hoàn thiện:"
