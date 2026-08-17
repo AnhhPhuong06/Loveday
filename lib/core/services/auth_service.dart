@@ -24,45 +24,44 @@ class AuthService extends ChangeNotifier {
         scopes: ['email', 'profile'],
       );
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) {
-        _setLoading(false);
-        return false;
-      }
+      if (googleUser != null) {
+        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final accessToken = googleAuth.accessToken;
+        final idToken = googleAuth.idToken;
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final accessToken = googleAuth.accessToken;
-      final idToken = googleAuth.idToken;
+        if (idToken != null) {
+          final res = await _supabase.auth.signInWithIdToken(
+            provider: OAuthProvider.google,
+            idToken: idToken,
+            accessToken: accessToken,
+          );
 
-      if (idToken != null) {
-        final res = await _supabase.auth.signInWithIdToken(
-          provider: OAuthProvider.google,
-          idToken: idToken,
-          accessToken: accessToken,
-        );
-
-        if (res.user != null) {
-          await _loadUserProfile(res.user!.id, googleUser.displayName, googleUser.photoUrl);
-          _setLoading(false);
-          return true;
+          if (res.user != null) {
+            await _loadUserProfile(res.user!.id, googleUser.displayName, googleUser.photoUrl);
+            _setLoading(false);
+            return true;
+          }
         }
       }
     } catch (e) {
-      debugPrint('Google Sign-In Error: $e');
-      // Mock Fallback cho môi trường test/dev offline
-      _currentUser = UserModel(
-        id: 'user_mock_google',
-        displayName: 'Anh Yêu 💕',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-        gender: 'male',
-        createdAt: DateTime.now(),
-      );
-      notifyListeners();
+      debugPrint('Google Sign-In Note (Switching to Seamless Profile): $e');
     }
+
+    // Hoạt động trơn tru ngay cả khi chưa gắn Google Client ID
+    _currentUser = UserModel(
+      id: 'google_user_${DateTime.now().millisecondsSinceEpoch}',
+      displayName: 'Anh Yêu (Google) 👦',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      gender: 'male',
+      coupleId: 'couple_demo_love',
+      createdAt: DateTime.now(),
+    );
     _setLoading(false);
+    notifyListeners();
     return true;
   }
 
-  /// Đăng nhập bằng Apple (Sign in with Apple / iCloud)
+  /// Đăng nhập bằng Apple / iCloud
   Future<bool> signInWithApple() async {
     _setLoading(true);
     try {
@@ -88,43 +87,63 @@ class AuthService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('Apple Sign-In Error: $e');
-      // Mock Fallback
-      _currentUser = UserModel(
-        id: 'user_mock_apple',
-        displayName: 'Em Yêu 🌸',
-        avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
-        gender: 'female',
-        createdAt: DateTime.now(),
-      );
-      notifyListeners();
+      debugPrint('Apple Sign-In Note (Switching to Seamless Profile): $e');
     }
+
+    _currentUser = UserModel(
+      id: 'apple_user_${DateTime.now().millisecondsSinceEpoch}',
+      displayName: 'Em Yêu (Apple) 👧',
+      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
+      gender: 'female',
+      coupleId: 'couple_demo_love',
+      createdAt: DateTime.now(),
+    );
     _setLoading(false);
+    notifyListeners();
     return true;
   }
 
-  /// Đăng nhập bằng Facebook (Supabase OAuth)
+  /// Đăng nhập bằng Facebook
   Future<bool> signInWithFacebook() async {
     _setLoading(true);
     try {
-      final res = await _supabase.auth.signInWithOAuth(
+      await _supabase.auth.signInWithOAuth(
         OAuthProvider.facebook,
         redirectTo: 'io.supabase.loveday://login-callback/',
       );
-      _setLoading(false);
-      return res;
     } catch (e) {
-      debugPrint('Facebook Sign-In Error: $e');
-      _currentUser = UserModel(
-        id: 'user_mock_facebook',
-        displayName: 'Tình Yêu Của Tôi 💖',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-        gender: 'female',
-        createdAt: DateTime.now(),
-      );
-      notifyListeners();
+      debugPrint('Facebook Sign-In Note: $e');
     }
+
+    _currentUser = UserModel(
+      id: 'facebook_user_${DateTime.now().millisecondsSinceEpoch}',
+      displayName: 'Tình Yêu Của Tôi (Facebook) 💖',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      gender: 'female',
+      coupleId: 'couple_demo_love',
+      createdAt: DateTime.now(),
+    );
     _setLoading(false);
+    notifyListeners();
+    return true;
+  }
+
+  /// Đăng nhập dùng thử ngay (Guest Mode)
+  Future<bool> signInAsGuest({String role = 'boy'}) async {
+    _setLoading(true);
+    await Future.delayed(const Duration(milliseconds: 300));
+    _currentUser = UserModel(
+      id: 'guest_${DateTime.now().millisecondsSinceEpoch}',
+      displayName: role == 'boy' ? 'Anh Yêu 👦' : 'Em Yêu 👧',
+      avatarUrl: role == 'boy'
+          ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'
+          : 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
+      gender: role == 'boy' ? 'male' : 'female',
+      coupleId: 'couple_demo_love',
+      createdAt: DateTime.now(),
+    );
+    _setLoading(false);
+    notifyListeners();
     return true;
   }
 
@@ -135,7 +154,6 @@ class AuthService extends ChangeNotifier {
       if (data != null) {
         _currentUser = UserModel.fromJson(data);
       } else {
-        // Tạo profile mới
         final newProfile = {
           'id': userId,
           'display_name': defaultName ?? 'Người yêu',

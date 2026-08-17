@@ -34,11 +34,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Gradient
+          // Romantic Dark Gradient Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF1E0E18), Color(0xFF121217)],
+                colors: [Color(0xFF1E0E18), Color(0xFF0F0F14)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -54,14 +54,14 @@ class _LoginScreenState extends State<LoginScreen> {
               height: 250,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.primary.withOpacity(0.25),
+                color: AppColors.primary.withOpacity(0.3),
               ),
             ),
           ),
 
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28.0),
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -69,8 +69,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // App Logo & Heart Icon
                   Container(
-                    width: 100,
-                    height: 100,
+                    width: 96,
+                    height: 96,
                     decoration: BoxDecoration(
                       gradient: AppColors.loveGradient,
                       shape: BoxShape.circle,
@@ -85,15 +85,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Icon(
                       Icons.favorite_rounded,
                       color: Colors.white,
-                      size: 56,
+                      size: 52,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   const Text(
-                    'LoveDay',
+                    'LoveDay 💕',
                     style: TextStyle(
-                      fontSize: 38,
+                      fontSize: 36,
                       fontWeight: FontWeight.w900,
                       color: Colors.white,
                       letterSpacing: 1.2,
@@ -101,11 +101,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Không gian riêng tư & gắn kết cho hai ta 💕',
+                    'Không gian riêng tư & gắn kết tình yêu trọn vẹn',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 15,
+                      color: Colors.white.withOpacity(0.75),
                     ),
                   ),
 
@@ -119,12 +119,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Apple Login Button (iCloud)
                         _SocialButton(
                           icon: Icons.apple,
-                          label: 'Đăng nhập bằng Apple',
+                          label: 'Đăng nhập với Apple (iCloud)',
                           backgroundColor: Colors.white,
                           textColor: Colors.black,
                           onPressed: () => _handleLogin(widget.authService.signInWithApple),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
 
                         // Google Login Button
                         _SocialButton(
@@ -134,25 +134,42 @@ class _LoginScreenState extends State<LoginScreen> {
                           textColor: Colors.white,
                           onPressed: () => _handleLogin(widget.authService.signInWithGoogle),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
 
                         // Facebook Login Button
                         _SocialButton(
                           icon: Icons.facebook,
-                          label: 'Đăng nhập bằng Facebook',
+                          label: 'Đăng nhập với Facebook',
                           backgroundColor: const Color(0xFF1877F2),
                           textColor: Colors.white,
                           onPressed: () => _handleLogin(widget.authService.signInWithFacebook),
                         ),
+                        const SizedBox(height: 12),
+
+                        // Quick Guest Trial Button
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.pinkAccent,
+                            side: const BorderSide(color: Colors.pinkAccent, width: 1.5),
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          icon: const Icon(Icons.favorite_border, size: 20),
+                          label: const Text(
+                            'Trải Nghiệm Dùng Thử Ngay 💕',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () => _handleLogin(widget.authService.signInAsGuest),
+                        ),
                       ],
                     ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Text(
-                    'Bằng việc đăng nhập, bạn đồng ý với Điều khoản & Chính sách bảo mật',
+                    'Bằng việc đăng nhập, bạn đồng ý với Điều khoản & Bảo mật của LoveDay',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: Colors.white.withOpacity(0.4),
                     ),
                   ),
@@ -186,24 +203,24 @@ class _SocialButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 54,
+      height: 52,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: backgroundColor,
           foregroundColor: textColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
+          elevation: 2,
         ),
         onPressed: onPressed,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 28, color: textColor),
-            const SizedBox(width: 12),
+            Icon(icon, size: 26, color: textColor),
+            const SizedBox(width: 10),
             Text(
               label,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: textColor,
               ),
