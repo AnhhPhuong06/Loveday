@@ -79,14 +79,14 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Pre-compile Flutter Dart Release Bundle & Bypass Run Scripts
+      - name: Pre-compile Dart AOT & Neutralize Run Scripts
         run: |
           FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          # 1. Biên dịch trước toàn bộ Dart AOT Release & Assets
+          # 1. Biên dịch toàn bộ Flutter Assets & Dart Release
           flutter build bundle --release
           
-          # 2. Biên dịch Flutter Assembly cho iOS
+          # 2. Biên dịch Flutter Assembly tạo App.framework
           flutter assemble \
             --output=ios/Flutter \
             -dTargetPlatform=ios \
@@ -96,24 +96,21 @@ jobs:
             -dTrackWidgetCreation=true \
             release_ios_bundle_flutter_assets || true
             
-          # Sao chép Flutter.framework từ cache vào ios/Flutter
+          # Copy Flutter.framework từ cache
           cp -r "${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine/ios-release/Flutter.xcframework/ios-arm64/Flutter.framework" ios/Flutter/ 2>/dev/null || true
           
-          # 3. Patch project.pbxproj để bỏ qua rào cản Run Script của Xcode 16
+          # 3. Sử dụng Regex triệt tiêu toàn bộ shellScript xcode_backend.sh trong project.pbxproj
           python3 -c "
           import re
           
           with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
               content = f.read()
           
-          # Thay thế xcode_backend.sh bằng exit 0 để tránh lỗi sandbox exit 65
-          content = content.replace(
-              '/bin/sh \"\$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build',
-              'echo \"Flutter AOT Precompiled\"; exit 0'
-          )
-          content = content.replace(
-              '/bin/sh \"\$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin',
-              'echo \"Flutter Frameworks Ready\"; exit 0'
+          # Thay the bat ky shellScript nao chua xcode_backend.sh bang exit 0
+          content = re.sub(
+              r'shellScript = \"[^\"]*xcode_backend\.sh[^\"]*\";',
+              'shellScript = \"echo \\\"Flutter Frameworks Ready\\\"; exit 0;\";',
+              content
           )
           
           injection = '''buildSettings = {
@@ -129,6 +126,8 @@ jobs:
           
           with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
               f.write(content)
+          
+          print('✅ Đã vô hiệu hóa xcode_backend.sh và tiêm signing settings thành công!')
           "
           
           cat << EOF > ios/Flutter/Release.xcconfig
@@ -148,7 +147,7 @@ jobs:
           PROVISIONING_PROFILE_SPECIFIER=
           EOF
 
-      - name: Build iOS App with Xcodebuild
+      - name: Build iOS Native App with Xcodebuild
         run: |
           # Biên dịch toàn bộ mã Native Swift và tạo Runner.app hoàn chỉnh
           xcodebuild -workspace ios/Runner.xcworkspace \
@@ -178,18 +177,20 @@ jobs:
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "✅ Đã tìm thấy Runner.app tại: $APP_PATH"
           
           # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
           
-          # Nạp App.framework và Flutter.framework nếu cần
+          # Nạp App.framework và Flutter.framework
           mkdir -p Payload/Runner.app/Frameworks
           cp -r ios/Flutter/Flutter.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
           cp -r ios/Flutter/App.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
           
-          # Nạp Flutter Assets
+          # Nạp Flutter Assets vào cả 2 vị trí chuẩn
+          mkdir -p Payload/Runner.app/flutter_assets
           mkdir -p Payload/Runner.app/Frameworks/App.framework/flutter_assets
+          cp -r build/flutter_assets/* Payload/Runner.app/flutter_assets/ 2>/dev/null || true
           cp -r build/flutter_assets/* Payload/Runner.app/Frameworks/App.framework/flutter_assets/ 2>/dev/null || true
           
           echo "📊 Kích thước gói ứng dụng hoàn thiện:"
