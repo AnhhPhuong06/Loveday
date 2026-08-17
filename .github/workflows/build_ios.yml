@@ -117,23 +117,27 @@ jobs:
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          # Tìm Runner.app trong build
+          echo "🔍 Quét tìm Runner.app có dung lượng thực tế trên máy chủ macOS..."
+          
           APP_PATH=""
-          if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            APP_PATH="build/ios/iphoneos/Runner.app"
-          elif [ -d "build/ios/Release-iphoneos/Runner.app" ]; then
-            APP_PATH="build/ios/Release-iphoneos/Runner.app"
-          else
-            APP_PATH=$(find build -name "Runner.app" -type d 2>/dev/null | head -n 1)
-          fi
+          for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
+            SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
+            echo "Tìm thấy: $p -> Dung lượng: $SIZE_KB KB"
+            if [ "$SIZE_KB" -gt 5000 ]; then
+              APP_PATH="$p"
+              break
+            fi
+          done
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app!"
-            find build -maxdepth 6 || true
+            echo "❌ Không tìm thấy Runner.app có dung lượng thực tế > 5MB!"
+            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 2>/dev/null || true
             exit 1
           fi
           
-          echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "✅ Đã chọn Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "📊 Kích thước gói ứng dụng:"
+          du -sh "$APP_PATH"
           
           # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
@@ -142,9 +146,6 @@ jobs:
           mkdir -p Payload/Runner.app/Frameworks
           cp -r ios/Flutter/Flutter.framework Payload/Runner.app/Frameworks/ 2>/dev/null || true
           cp -r build/flutter_assets Payload/Runner.app/ 2>/dev/null || true
-          
-          echo "📊 Kích thước gói ứng dụng:"
-          du -sh Payload/Runner.app
           
           # Ký Ad-hoc để tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
