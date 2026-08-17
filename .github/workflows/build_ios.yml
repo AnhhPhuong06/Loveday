@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Generate iOS Native Scaffold & CocoaPods
+      - name: Generate iOS Native Scaffold & Dependencies
         run: |
           # Backup cấu hình tùy biến
           cp ios/Podfile /tmp/Podfile.bak 2>/dev/null || true
@@ -37,46 +37,58 @@ jobs:
           cp /tmp/Podfile.bak ios/Podfile 2>/dev/null || true
           cp /tmp/Info.plist.bak ios/Runner/Info.plist 2>/dev/null || true
           
-          # Chuyển đổi Signing sang Manual trong Xcode project
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj || true
-          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
-          sed -i '' 's/DevelopmentTeam = [^;]*;/DevelopmentTeam = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
-          
           flutter pub get
           cd ios
           pod install --repo-update
           cd ..
 
-      - name: Compile Release Bundle & Build IPA with Xcode
+      - name: Patch Xcode Project Configurations for No-CodeSign
         run: |
-          # 1. Build Flutter Dart Release Bundle
-          flutter build bundle --release
+          python3 -c "
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
+              content = f.read()
           
-          # 2. Biên dịch trực tiếp qua xcodebuild bỏ qua Provisioning Profile
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            DEVELOPMENT_TEAM="" \
-            build
+          # Thiet lap DevelopmentTeam de thoa man Flutter CLI nhung tat bat buoc ky ma cua Xcode
+          patch = '''CODE_SIGN_STYLE = Manual;
+          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
+          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
+          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
+          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
+          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
+          
+          content = content.replace('CODE_SIGN_STYLE = Automatic;', patch)
+          
+          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
+              f.write(content)
+          "
+          
+          mkdir -p ios/Flutter
+          cat << 'EOF' > ios/Flutter/Release.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+          #include "Generated.xcconfig"
+          CODE_SIGN_STYLE = Manual
+          DEVELOPMENT_TEAM = ABCDE12345
+          CODE_SIGNING_ALLOWED = NO
+          CODE_SIGNING_REQUIRED = NO
+          CODE_SIGN_IDENTITY =
+          PROVISIONING_PROFILE_SPECIFIER =
+          EOF
+
+      - name: Build iOS Release App with Flutter
+        run: |
+          # Flutter se tu dong thiet lap day du FLUTTER_ROOT, bien dich Dart Release va tao Runner.app
+          flutter build ios --release --no-codesign
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Runner.app"
+          APP_PATH="build/ios/iphoneos/Runner.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "Tìm kiếm Runner.app trong DerivedData..."
-            APP_PATH=$(find build/DerivedData -name "Runner.app" -type d | head -n 1)
+            echo "Tìm kiếm Runner.app trong build folder..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
@@ -90,9 +102,6 @@ jobs:
           
           # Copy Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
-          
-          # Ký ad-hoc để đảm bảo cấu trúc bundle hợp lệ
-          codesign --force --deep --sign - Payload/Runner.app || true
           
           # Đóng gói zip chuẩn cấu trúc IPA cho iOS
           zip -r dist/LoveDay.ipa Payload
