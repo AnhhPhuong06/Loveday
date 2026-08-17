@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Git and Environment Permissions
+      - name: Configure Git and System Symlinks
         run: |
           git config --global --add safe.directory "*"
           sudo ln -sf $(which flutter) /usr/local/bin/flutter || true
@@ -36,7 +36,7 @@ jobs:
           # 1. Tạo scaffold nếu cần
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
-          # 2. Tạo Podfile chuẩn iOS 14
+          # 2. Tạo Podfile chuẩn iOS 14 và tắt Sandboxing
           cat << 'EOF' > ios/Podfile
           platform :ios, '14.0'
           ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -79,70 +79,76 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Patch Xcode Project for Unsigned Release
+      - name: Configure Flutter & Xcode Build Settings
         run: |
-          python3 -c "
-          import re
+          FLUTTER_SDK_DIR="$(which flutter | sed 's/\/bin\/flutter//')"
           
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
-              content = f.read()
-          
-          injection = '''buildSettings = {
-          \t\t\t\tDEVELOPMENT_TEAM = ABCDE12345;
-          \t\t\t\tENABLE_USER_SCRIPT_SANDBOXING = NO;
-          \t\t\t\tCODE_SIGN_STYLE = Manual;
-          \t\t\t\tCODE_SIGNING_ALLOWED = NO;
-          \t\t\t\tCODE_SIGNING_REQUIRED = NO;
-          \t\t\t\tCODE_SIGN_IDENTITY = \"\";
-          \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";'''
-          
-          content = re.sub(r'buildSettings = \{', injection, content)
-          
-          with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
-              f.write(content)
-          "
+          cat << EOF > ios/Flutter/Release.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+          #include "Generated.xcconfig"
+          FLUTTER_ROOT=${FLUTTER_SDK_DIR}
+          FLUTTER_APPLICATION_PATH=${PWD}
+          FLUTTER_TARGET=lib/main.dart
+          FLUTTER_BUILD_DIR=build
+          FLUTTER_BUILD_NAME=1.0.0
+          FLUTTER_BUILD_NUMBER=1
+          ENABLE_USER_SCRIPT_SANDBOXING=NO
+          CODE_SIGN_STYLE=Manual
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=
+          PROVISIONING_PROFILE_SPECIFIER=
+          EOF
           
           echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
-          echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Release.xcconfig
+          
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual; ENABLE_USER_SCRIPT_SANDBOXING = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj || true
 
-      - name: Build iOS Release App with Flutter CLI
+      - name: Build iOS App with Xcode Direct Output
         run: |
-          # Flutter CLI biên dịch toàn bộ Dart Release và Xcode
-          flutter build ios --release --no-codesign || true
+          # 1. Biên dịch Flutter bundle
+          flutter build bundle --release
+          
+          # 2. Biên dịch trực tiếp bằng Xcode và xuất file thẳng vào CONFIGURATION_BUILD_DIR
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CONFIGURATION_BUILD_DIR="$PWD/build/Release-iphoneos" \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          echo "🔍 Quét tìm tất cả các thư mục Runner.app trên máy chủ macOS..."
-          find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d -exec du -sh {} + 2>/dev/null || true
+          APP_PATH="build/Release-iphoneos/Runner.app"
           
-          # Lọc chính xác thư mục Runner.app có dung lượng thực (> 5MB)
-          APP_PATH=""
-          for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
-            SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
-            echo "Kiểm tra gói: $p -> Dung lượng: $SIZE_KB KB"
-            if [ "$SIZE_KB" -gt 5000 ]; then
-              APP_PATH="$p"
-              break
-            fi
-          done
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Tìm kiếm Runner.app trong build..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+          fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app có dung lượng thực tế!"
-            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 2>/dev/null || true
+            echo "❌ Không tìm thấy Runner.app!"
+            find build -maxdepth 6 || true
             exit 1
           fi
           
-          echo "✅ Đã chọn Runner.app hoàn chỉnh tại: $APP_PATH"
-          echo "📊 Kích thước gói ứng dụng đã biên dịch:"
+          echo "✅ Đã tìm thấy Runner.app hoàn chỉnh tại: $APP_PATH"
+          echo "📊 Kích thước Runner.app thực tế:"
           du -sh "$APP_PATH"
           
-          # Sao chép vào thư mục Payload chuẩn iOS
+          # Copy toàn bộ Runner.app vào thư mục Payload
           cp -r "$APP_PATH" Payload/
           
-          # Ký Ad-hoc để tương thích Sideloadly / TrollStore
+          # Ký Ad-hoc để đảm bảo tương thích Sideloadly / TrollStore
           codesign --force --deep --sign - Payload/Runner.app || true
           
           # Nén Payload thành LoveDay.ipa
@@ -151,7 +157,7 @@ jobs:
           echo "🎉 Kích thước file IPA hoàn thiện:"
           ls -lh dist/LoveDay.ipa
           
-          # Xác thực dung lượng thực (> 5MB)
+          # Kiểm tra dung lượng hợp lệ (> 5MB)
           FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
           echo "Dung lượng chính xác: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 5000000 ]; then
