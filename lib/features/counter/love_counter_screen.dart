@@ -4,8 +4,11 @@ import '../../core/services/auth_service.dart';
 import '../../core/services/couple_service.dart';
 import '../../widgets/heart_pulse_widget.dart';
 import '../../widgets/streak_badge.dart';
+import '../../widgets/particle_background.dart';
+import '../../widgets/glowing_avatar.dart';
+import '../settings/widget_customizer_screen.dart';
 
-class LoveCounterScreen extends StatelessWidget {
+class LoveCounterScreen extends StatefulWidget {
   final AuthService authService;
   final CoupleService coupleService;
   final VoidCallback onOpenStreaks;
@@ -18,8 +21,27 @@ class LoveCounterScreen extends StatelessWidget {
   });
 
   @override
+  State<LoveCounterScreen> createState() => _LoveCounterScreenState();
+}
+
+class _LoveCounterScreenState extends State<LoveCounterScreen> {
+  String _myName = 'Anh Yêu 👦';
+  String _partnerName = 'Em Yêu 👧';
+  String? _myCustomAvatar;
+  String? _partnerCustomAvatar;
+  Color _myFrameColor = const Color(0xFFFF4B72);
+  Color _partnerFrameColor = const Color(0xFFFFB800);
+
+  @override
+  void initState() {
+    super.initState();
+    _myName = widget.authService.currentUser?.displayName ?? 'Anh Yêu 👦';
+    _partnerName = widget.coupleService.partner?.displayName ?? 'Em Yêu 👧';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final couple = coupleService.couple;
+    final couple = widget.coupleService.couple;
     final totalDays = couple?.totalLoveDays ?? 128;
     final streak = couple?.currentStreak ?? 12;
 
@@ -39,14 +61,14 @@ class LoveCounterScreen extends StatelessWidget {
             ),
           ),
 
-          // Gradient Overlay
+          // Dark Gradient Glassmorphism Overlay
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.black.withOpacity(0.75),
+                    Colors.black.withOpacity(0.35),
+                    Colors.black.withOpacity(0.8),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -55,12 +77,21 @@ class LoveCounterScreen extends StatelessWidget {
             ),
           ),
 
+          // 60FPS Floating Romantic Hearts & Sparkles Canvas
+          const Positioned.fill(
+            child: ParticleBackground(
+              numberOfParticles: 30,
+              baseColor: Color(0xFFFF4B72),
+              child: SizedBox.expand(),
+            ),
+          ),
+
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
               child: Column(
                 children: [
-                  // Top Header: App Title & Streak Badge
+                  // Top Header: App Title, Widget Studio Shortcut & Streak Badge
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -71,66 +102,128 @@ class LoveCounterScreen extends StatelessWidget {
                             'LoveDay 💕',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 22,
+                              fontSize: 24,
                               fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
                             ),
                           ),
                           Text(
-                            'Bên nhau mỗi ngày',
+                            'Bên nhau trọn từng khoảnh khắc',
                             style: TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                         ],
                       ),
-                      StreakBadge(
-                        count: streak,
-                        isCompletedToday: couple?.isStreakCompletedToday ?? true,
-                        onTap: onOpenStreaks,
+                      Row(
+                        children: [
+                          // Widget Studio Button
+                          IconButton(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.15),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            icon: const Icon(Icons.widgets_outlined, color: Colors.white, size: 22),
+                            tooltip: 'Tùy chỉnh Khung Viền Widget',
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => WidgetCustomizerScreen(
+                                    daysTogether: totalDays,
+                                    myName: _myName,
+                                    partnerName: _partnerName,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          StreakBadge(
+                            count: streak,
+                            isCompletedToday: couple?.isStreakCompletedToday ?? true,
+                            onTap: widget.onOpenStreaks,
+                          ),
+                        ],
                       ),
                     ],
                   ),
 
                   const Spacer(),
 
-                  // Couple Avatars & Heart Pulse Connector
+                  // Interactive Couple Avatars with Customizable Glowing Frames
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // User Avatar
-                      _CoupleAvatar(
-                        name: authService.currentUser?.displayName ?? 'Anh Yêu',
+                      // User Avatar Frame
+                      GlowingAvatarFrame(
+                        name: _myName,
+                        role: 'boy',
                         avatarAsset: 'assets/images/avatar_boy.png',
-                        fallbackUrl: authService.currentUser?.avatarUrl ??
-                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                        customImagePath: _myCustomAvatar,
+                        fallbackUrl: widget.authService.currentUser?.avatarUrl ?? '',
+                        frameColor: _myFrameColor,
+                        onUpdate: (newName, newPath, newColor) {
+                          setState(() {
+                            _myName = newName;
+                            if (newPath != null) _myCustomAvatar = newPath;
+                            _myFrameColor = newColor;
+                          });
+                        },
                       ),
-                      const SizedBox(width: 16),
 
-                      // Animated Pulsing Heart
-                      const HeartPulseWidget(size: 64),
+                      const SizedBox(width: 14),
 
-                      const SizedBox(width: 16),
-                      // Partner Avatar
-                      _CoupleAvatar(
-                        name: coupleService.partner?.displayName ?? 'Em Yêu',
+                      // Pulsing Neon Heart Connector
+                      Column(
+                        children: [
+                          HeartPulseWidget(size: 60, color: _myFrameColor),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.pinkAccent.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text('Forever', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(width: 14),
+
+                      // Partner Avatar Frame
+                      GlowingAvatarFrame(
+                        name: _partnerName,
+                        role: 'girl',
                         avatarAsset: 'assets/images/avatar_girl.png',
-                        fallbackUrl: coupleService.partner?.avatarUrl ??
-                            'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
+                        customImagePath: _partnerCustomAvatar,
+                        fallbackUrl: widget.coupleService.partner?.avatarUrl ?? '',
+                        frameColor: _partnerFrameColor,
+                        onUpdate: (newName, newPath, newColor) {
+                          setState(() {
+                            _partnerName = newName;
+                            if (newPath != null) _partnerCustomAvatar = newPath;
+                            _partnerFrameColor = newColor;
+                          });
+                        },
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
 
-                  // Large Love Days Counter (InLove Style)
+                  // Large Love Days Counter (InLove Aesthetic Glass Card)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 32),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 24),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withOpacity(0.45),
                       borderRadius: BorderRadius.circular(32),
-                      border: Border.all(color: Colors.white.withOpacity(0.15)),
+                      border: Border.all(color: _myFrameColor.withOpacity(0.35), width: 1.8),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: _myFrameColor.withOpacity(0.25),
                           blurRadius: 20,
+                          spreadRadius: 2,
                         ),
                       ],
                     ),
@@ -140,12 +233,12 @@ class LoveCounterScreen extends StatelessWidget {
                           'CHÚNG MÌNH ĐÃ YÊU NHAU',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 2.0,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2.5,
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -155,9 +248,12 @@ class LoveCounterScreen extends StatelessWidget {
                               '$totalDays',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 64,
+                                fontSize: 68,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
+                                letterSpacing: 1.5,
+                                shadows: [
+                                  Shadow(color: Colors.pinkAccent, blurRadius: 20),
+                                ],
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -165,18 +261,18 @@ class LoveCounterScreen extends StatelessWidget {
                               'NGÀY',
                               style: TextStyle(
                                 color: AppColors.primaryLight,
-                                fontSize: 20,
+                                fontSize: 22,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
-                          '${totalDays * 24} giờ • ${totalDays * 1440} phút',
+                          '${totalDays * 24} giờ • ${totalDays * 1440} phút • ${totalDays * 86400} giây',
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.8),
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -184,46 +280,69 @@ class LoveCounterScreen extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
 
-                  // Upcoming Anniversary Milestone
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Text('🎉', style: TextStyle(fontSize: 20)),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Cột mốc tiếp theo: 200 ngày',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  'Còn ${200 - (totalDays % 200)} ngày nữa',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                  // Upcoming Anniversary Milestone & Progress Bar
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => WidgetCustomizerScreen(
+                            daysTogether: totalDays,
+                            myName: _myName,
+                            partnerName: _partnerName,
+                          ),
                         ),
-                        const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
-                      ],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Text('🎉', style: TextStyle(fontSize: 18)),
+                              ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Cột mốc tiếp theo: 200 ngày',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Còn ${200 - (totalDays % 200)} ngày nữa • Nhấn để sửa Widget',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 14),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -234,48 +353,6 @@ class LoveCounterScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CoupleAvatar extends StatelessWidget {
-  final String name;
-  final String avatarAsset;
-  final String fallbackUrl;
-
-  const _CoupleAvatar({
-    required this.name,
-    required this.avatarAsset,
-    required this.fallbackUrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(3),
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: AppColors.loveGradient,
-          ),
-          child: CircleAvatar(
-            radius: 38,
-            backgroundColor: Colors.pink[50],
-            backgroundImage: AssetImage(avatarAsset) as ImageProvider,
-            onBackgroundImageError: (_, __) {},
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          name,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-        ),
-      ],
     );
   }
 }

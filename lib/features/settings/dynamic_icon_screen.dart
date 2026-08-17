@@ -137,24 +137,31 @@ class DynamicIconScreen extends StatelessWidget {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              // Icon Preview Box
+                              // Icon Preview Box với ảnh 3D thực tế
                               Container(
-                                width: 64,
-                                height: 64,
+                                width: 68,
+                                height: 68,
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  gradient: _getIconGradient(icon.id),
+                                  borderRadius: BorderRadius.circular(18),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.15),
-                                      blurRadius: 8,
+                                      color: isSelected ? AppColors.primary.withOpacity(0.35) : Colors.black12,
+                                      blurRadius: 10,
+                                      spreadRadius: 2,
                                     ),
                                   ],
                                 ),
-                                child: Center(
-                                  child: Text(
-                                    _getIconEmoji(icon.id),
-                                    style: const TextStyle(fontSize: 30),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(18),
+                                  child: Image.asset(
+                                    icon.previewAsset,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      decoration: BoxDecoration(gradient: _getIconGradient(icon.id)),
+                                      child: Center(
+                                        child: Text(_getIconEmoji(icon.id), style: const TextStyle(fontSize: 30)),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
