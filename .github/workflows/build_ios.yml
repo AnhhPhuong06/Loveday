@@ -36,7 +36,7 @@ jobs:
 
       - name: Setup Flutter iOS Native Project & Frameworks
         run: |
-          # 1. Tạo scaffold iOS trước để sinh AppFrameworkInfo.plist
+          # 1. Tạo scaffold iOS
           flutter create --project-name loveday --platforms=ios --org com.loveday.app .
           
           # 2. Sinh sẵn cấu hình Flutter iOS với --no-codesign
@@ -134,6 +134,7 @@ jobs:
 
       - name: Build iOS App with Xcodebuild
         run: |
+          set +e
           # Biên dịch trực tiếp tạo Runner.app trong build/DerivedData
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -145,8 +146,17 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            build
+            build 2>&1 | tee xcodebuild.log
+          
+          XCODE_EXIT=$?
+          if [ $XCODE_EXIT -ne 0 ]; then
+            echo "❌ CHI TIẾT LỖI XCODEBUILD:"
+            grep -C 3 -E "error:|fatal error:|failed with exit code" xcodebuild.log || tail -n 80 xcodebuild.log
+            exit $XCODE_EXIT
+          fi
 
       - name: Package Payload into LoveDay.ipa
         run: |
