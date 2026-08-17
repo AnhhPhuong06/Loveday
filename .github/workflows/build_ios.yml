@@ -42,29 +42,32 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Compile iOS Release Bundle
+      - name: Compile iOS Release App
         run: |
-          # Flutter biên dịch toàn bộ Dart AOT + Native Swift vào build/ios/iphoneos/Runner.app
+          # Biên dịch toàn bộ Dart AOT + Native Swift
           flutter build ios --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           
-          # Kiểm tra file Runner.app đã biên dịch xong
-          if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            echo "✅ Da tim thay Runner.app bien dich thanh cong!"
+          # Tìm kiếm Runner.app tự động ở bất kỳ thư mục build nào
+          APP_PATH=$(find build ios -name "Runner.app" -type d | head -n 1)
+          
+          if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
+            echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
             
-            # Ký ad-hoc để tương thích hoàn toàn với Sideloadly / TrollStore / Scarlet
-            codesign --force --deep --sign - build/ios/iphoneos/Runner.app || true
+            cp -r "$APP_PATH" Payload/
             
-            cp -r build/ios/iphoneos/Runner.app Payload/
+            # Ký ad-hoc để tương thích hoàn toàn với Sideloadly / TrollStore
+            codesign --force --deep --sign - Payload/Runner.app || true
+            
             zip -r LoveDay.ipa Payload
             mv LoveDay.ipa dist/
-            echo "🎉 Dong goi LoveDay.ipa thanh cong!"
+            echo "🎉 Đóng gói LoveDay.ipa thành công!"
           else
-            echo "❌ Khong tim thay Runner.app, kiem tra thu muc build:"
-            find build -maxdepth 4 || true
+            echo "❌ Không tìm thấy Runner.app trong build!"
+            find build -maxdepth 5 || true
             exit 1
           fi
 
