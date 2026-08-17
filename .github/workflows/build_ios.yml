@@ -42,38 +42,76 @@ jobs:
           pod install --repo-update
           cd ..
 
-      - name: Compile iOS Release App
+      - name: Configure Ad-Hoc Code Signing (-)
         run: |
-          # Flutter biên dịch toàn bộ Dart AOT + Native Swift
-          flutter build ios --release --no-codesign || true
+          mkdir -p ios/Flutter
+          
+          cat << 'EOF' > ios/Flutter/Release.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+          #include "Generated.xcconfig"
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGN_IDENTITY = -
+          CODE_SIGNING_REQUIRED = YES
+          CODE_SIGNING_ALLOWED = YES
+          DEVELOPMENT_TEAM =
+          PROVISIONING_PROFILE_SPECIFIER =
+          EOF
+          
+          cat << 'EOF' > ios/Flutter/Debug.xcconfig
+          #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+          #include "Generated.xcconfig"
+          CODE_SIGN_STYLE = Manual
+          CODE_SIGN_IDENTITY = -
+          CODE_SIGNING_REQUIRED = YES
+          CODE_SIGNING_ALLOWED = YES
+          DEVELOPMENT_TEAM =
+          PROVISIONING_PROFILE_SPECIFIER =
+          EOF
+          
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj || true
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "-";/g' ios/Runner.xcodeproj/project.pbxproj || true
+
+      - name: Build iOS Release App
+        run: |
+          # Biên dịch toàn bộ app với Ad-Hoc signing
+          flutter build ios --release
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          echo "🔍 Đang sao chép Runner.app từ DerivedData của Xcode..."
+          APP_PATH="build/ios/iphoneos/Runner.app"
           
-          # Tìm và sao chép chính xác Runner.app vào thư mục Payload
-          find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d -exec cp -r {} Payload/ \;
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Tìm kiếm Runner.app trong build folder..."
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+          fi
           
-          if [ ! -d "Payload/Runner.app" ]; then
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app!"
-            find /Users/runner/Library/Developer/Xcode/DerivedData build -maxdepth 6 2>/dev/null || true
+            find build -maxdepth 6 || true
             exit 1
           fi
           
-          echo "✅ Đã sao chép Runner.app thành công! Dung lượng:"
-          du -sh Payload/Runner.app
+          echo "✅ Tìm thấy Runner.app tại: $APP_PATH"
+          du -sh "$APP_PATH"
           
-          # Ký ad-hoc
-          codesign --force --deep --sign - Payload/Runner.app || true
+          # Copy Runner.app vào thư mục Payload
+          cp -r "$APP_PATH" Payload/
           
-          # Đóng gói zip chuẩn cấu trúc IPA
+          # Đóng gói zip chuẩn cấu trúc IPA cho iOS
           zip -r dist/LoveDay.ipa Payload
           
-          echo "🎉 Kích thước file IPA hoàn thiện:"
+          echo "🎉 Kích thước file IPA xuất xưởng:"
           ls -lh dist/LoveDay.ipa
+          
+          # Kiểm tra dung lượng hợp lệ (phải lớn hơn 5MB)
+          FILE_SIZE=$(wc -c < dist/LoveDay.ipa)
+          if [ "$FILE_SIZE" -lt 5000000 ]; then
+            echo "❌ File IPA dung lượng không hợp lệ ($FILE_SIZE bytes)!"
+            exit 1
+          fi
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
