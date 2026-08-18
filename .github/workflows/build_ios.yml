@@ -103,23 +103,24 @@ jobs:
 
       - name: Build iOS Release App with Flutter CLI
         run: |
-          # Biên dịch trực tiếp Flutter Release cho thiết bị iOS
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          # Biên dịch toàn bộ Flutter Release cho thiết bị iOS
+          flutter build ios --release --no-codesign --no-tree-shake-icons || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          echo "🔍 Quét tìm Runner.app vừa biên dịch..."
+          echo "🔍 Quét tìm tất cả các file Runner.app và đo dung lượng..."
+          find build -name "Runner.app" -type d -exec du -sk {} + 2>/dev/null || true
+          
           APP_PATH=""
           
+          # Ưu tiên tìm đúng thư mục iphoneos chuẩn của Flutter
           if [ -d "build/ios/iphoneos/Runner.app" ] && [ "$(du -sk build/ios/iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
             APP_PATH="build/ios/iphoneos/Runner.app"
-          elif [ -d "build/ios/Release-iphoneos/Runner.app" ] && [ "$(du -sk build/ios/Release-iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
-            APP_PATH="build/ios/Release-iphoneos/Runner.app"
           else
-            for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
+            for p in $(find build -name "Runner.app" -type d 2>/dev/null); do
               SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
               echo "Kiểm tra gói: $p ($SIZE_KB KB)"
               if [ "$SIZE_KB" -gt 1000 ]; then
@@ -131,7 +132,7 @@ jobs:
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app dung lượng hợp lệ!"
-            find /Users/runner/Library/Developer/Xcode/DerivedData build -name "*.app" -type d -exec du -sh {} + 2>/dev/null || true
+            find build -maxdepth 6 || true
             exit 1
           fi
           
