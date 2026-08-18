@@ -25,7 +25,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	
-	<!-- Camera & Photo Library Permissions (Dành cho Chuỗi ảnh Streak & Kỷ niệm) -->
+	<!-- Quyền Camera, Thư viện ảnh, Micro cho Chuỗi ảnh & Kỷ niệm -->
 	<key>NSCameraUsageDescription</key>
 	<string>LoveDay cần quyền truy cập camera để bạn chụp và gửi ảnh giữ chuỗi cho người yêu</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -33,11 +33,29 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LoveDay cần quyền micro để bạn ghi âm lời nhắn yêu thương gửi cho đối phương</string>
 
-	<!-- Cấu hình Đổi Icon App linh hoạt (Dynamic Icons giống Locket) -->
+	<!-- Cấu hình Đổi Icon App Động (Dynamic Icons giống Locket) -->
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
+			<key>icon_pastel</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>icon_pastel</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>icon_cyberpunk</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>icon_cyberpunk</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 			<key>icon_golden</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
@@ -56,20 +74,54 @@
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
-			<key>icon_pixel</key>
+			<key>icon_diamond</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>icon_pixel</string>
+					<string>icon_diamond</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
-			<key>icon_sakura</key>
+		</dict>
+	</dict>
+
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>icon_pastel</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>icon_sakura</string>
+					<string>icon_pastel</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>icon_cyberpunk</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>icon_cyberpunk</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>icon_golden</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>icon_golden</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>icon_dark</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>icon_dark</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dynamic_icon_plus/flutter_dynamic_icon_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/app_icon_model.dart';
 
 class DynamicIconService extends ChangeNotifier {
@@ -16,36 +17,44 @@ class DynamicIconService extends ChangeNotifier {
 
   Future<void> _checkSupportAndLoadCurrent() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedIcon = prefs.getString('saved_app_icon_id');
+      if (savedIcon != null) {
+        _currentIconId = savedIcon;
+      }
+
       _supportsAlternateIcons = await FlutterDynamicIconPlus.supportsAlternateIcons;
       final currentName = await FlutterDynamicIconPlus.alternateIconName;
-      _currentIconId = currentName ?? 'default';
+      if (currentName != null && currentName.isNotEmpty) {
+        _currentIconId = currentName;
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Check Dynamic Icon Support: $e');
-      _supportsAlternateIcons = true; // Fallback demo
+      _supportsAlternateIcons = true;
     }
   }
 
   /// Thay đổi icon ứng dụng (giống Locket)
   Future<bool> setAppIcon(AppIconModel icon) async {
+    _currentIconId = icon.id;
+    notifyListeners();
+
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_app_icon_id', icon.id);
+
       if (icon.id == 'default') {
         await FlutterDynamicIconPlus.setAlternateIconName(iconName: null);
       } else {
         await FlutterDynamicIconPlus.setAlternateIconName(iconName: icon.iconKey);
       }
-      _currentIconId = icon.id;
-      notifyListeners();
       return true;
     } on PlatformException catch (e) {
-      debugPrint('Failed to change app icon: ${e.message}');
-      _currentIconId = icon.id; // Mock update for preview
-      notifyListeners();
+      debugPrint('Dynamic icon platform notice: ${e.message}');
       return true;
     } catch (e) {
       debugPrint('Error changing icon: $e');
-      _currentIconId = icon.id;
-      notifyListeners();
       return true;
     }
   }

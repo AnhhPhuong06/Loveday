@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/services/auth_service.dart';
-import 'couple_pairing_screen.dart';
+import '../../core/services/couple_service.dart';
+import '../home_shell_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final AuthService authService;
@@ -13,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final CoupleService _coupleService = CoupleService();
   bool _isLoading = false;
 
   Future<void> _handleLogin(Future<bool> Function() loginMethod) async {
@@ -21,11 +23,20 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (success && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => CouplePairingScreen(authService: widget.authService),
-        ),
-      );
+      // Tự động khởi tạo và vào thẳng không gian tình yêu
+      final userId = widget.authService.currentUser?.id ?? 'user_demo';
+      await _coupleService.loadCoupleData(userId);
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => HomeShellScreen(
+              authService: widget.authService,
+              coupleService: _coupleService,
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -38,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF1E0E18), Color(0xFF0F0F14)],
+                colors: [Color(0xFF1A0B14), Color(0xFF0C0C12)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -151,10 +162,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.pinkAccent,
                             side: const BorderSide(color: Colors.pinkAccent, width: 1.5),
-                            minimumSize: const Size(double.infinity, 50),
+                            minimumSize: const Size(double.infinity, 52),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
-                          icon: const Icon(Icons.favorite_border, size: 20),
+                          icon: const Icon(Icons.favorite, size: 20),
                           label: const Text(
                             'Trải Nghiệm Dùng Thử Ngay 💕',
                             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
