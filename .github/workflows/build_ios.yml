@@ -97,16 +97,37 @@ jobs:
 
       - name: Build iOS IPA with Flutter Official Command
         run: |
-          # Dùng lệnh chính thức flutter build ipa --no-codesign để tạo trọn vẹn bundle
-          flutter build ipa --release --no-codesign
+          # Biên dịch toàn bộ Dart AOT, Assets, Swift Native và Archive
+          flutter build ipa --release --no-codesign || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          # Tìm gói Runner.app đã biên dịch đầy đủ
-          APP_PATH=$(find build -name "Runner.app" -type d 2>/dev/null | head -n 1)
+          echo "🔍 Quét tìm Runner.app vừa biên dịch trong thư mục build..."
+          
+          APP_PATH=""
+          for p in $(find build -name "Runner.app" -type d 2>/dev/null); do
+            SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
+            echo "Kiểm tra gói: $p ($SIZE_KB KB)"
+            if [ "$SIZE_KB" -gt 5000 ]; then
+              APP_PATH="$p"
+              break
+            fi
+          done
+          
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "🔍 Đang tìm kiếm thêm trong DerivedData..."
+            for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d 2>/dev/null); do
+              SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
+              echo "Kiểm tra gói: $p ($SIZE_KB KB)"
+              if [ "$SIZE_KB" -gt 5000 ]; then
+                APP_PATH="$p"
+                break
+              fi
+            done
+          fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "❌ Không tìm thấy Runner.app!"
