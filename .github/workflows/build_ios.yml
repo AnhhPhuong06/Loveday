@@ -97,37 +97,41 @@ jobs:
           
           echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Generated.xcconfig
           echo "ENABLE_USER_SCRIPT_SANDBOXING=NO" >> ios/Flutter/Release.xcconfig
+          echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Release.xcconfig
+          echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Release.xcconfig
+          echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Release.xcconfig
 
       - name: Build iOS Release App with Flutter CLI
         run: |
-          # Biên dịch toàn bộ Flutter Release cho thiết bị iOS chuẩn xác
-          flutter build ios --release --no-codesign --no-tree-shake-icons || true
+          # Biên dịch trực tiếp Flutter Release cho thiết bị iOS
+          flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Package Payload into LoveDay.ipa
         run: |
           mkdir -p dist Payload
           rm -rf Payload/*
           
-          echo "🔍 Quét tìm tất cả các file .app trên hệ thống..."
-          find /Users/runner/Library/Developer/Xcode/DerivedData build -name "*.app" -type d -exec du -sh {} + 2>/dev/null || true
-          
+          echo "🔍 Quét tìm Runner.app vừa biên dịch..."
           APP_PATH=""
-          for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
-            SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
-            echo "Kiểm tra gói: $p ($SIZE_KB KB)"
-            if [ "$SIZE_KB" -gt 1000 ]; then
-              APP_PATH="$p"
-              break
-            fi
-          done
           
-          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            # Tìm bất kỳ file .app nào có nội dung
-            APP_PATH=$(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "*.app" -type d 2>/dev/null | head -n 1)
+          if [ -d "build/ios/iphoneos/Runner.app" ] && [ "$(du -sk build/ios/iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
+            APP_PATH="build/ios/iphoneos/Runner.app"
+          elif [ -d "build/ios/Release-iphoneos/Runner.app" ] && [ "$(du -sk build/ios/Release-iphoneos/Runner.app | cut -f1)" -gt 1000 ]; then
+            APP_PATH="build/ios/Release-iphoneos/Runner.app"
+          else
+            for p in $(find /Users/runner/Library/Developer/Xcode/DerivedData build -name "Runner.app" -type d 2>/dev/null); do
+              SIZE_KB=$(du -sk "$p" 2>/dev/null | cut -f1)
+              echo "Kiểm tra gói: $p ($SIZE_KB KB)"
+              if [ "$SIZE_KB" -gt 1000 ]; then
+                APP_PATH="$p"
+                break
+              fi
+            done
           fi
           
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "❌ Không tìm thấy Runner.app!"
+            echo "❌ Không tìm thấy Runner.app dung lượng hợp lệ!"
+            find /Users/runner/Library/Developer/Xcode/DerivedData build -name "*.app" -type d -exec du -sh {} + 2>/dev/null || true
             exit 1
           fi
           
