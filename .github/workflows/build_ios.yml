@@ -100,8 +100,8 @@ jobs:
 
       - name: Build iOS Release App with Flutter CLI
         run: |
-          # Biên dịch toàn bộ Flutter Release cho thiết bị iOS
-          flutter build ios --release --no-codesign --tree-shake-icons=false || true
+          # Biên dịch toàn bộ Flutter Release cho thiết bị iOS chuẩn xác
+          flutter build ios --release --no-codesign --no-tree-shake-icons || true
 
       - name: Package Payload into LoveDay.ipa
         run: |
